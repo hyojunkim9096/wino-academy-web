@@ -1,0 +1,53 @@
+/* src/styles/admin-staff.css
+   - 직원관리 전용 보강 스타일
+   - 전역(admin.css)은 공통 톤만, 화면 특화는 여기서 관리
+*/
+
+/* 리스트 패널 높이/스크롤 */
+.staff-list-panel {
+    max-height: calc(100vh - 18rem);
+    overflow: auto;
+}
+
+/* 대비 높은 입력 필드(모달/다크에서 가독성 강화) */
+.aa-input-contrast {
+    background-color: #111827; /* gray-900 */
+    color: #f9fafb;            /* gray-50 */
+    border: 1px solid #4b5563; /* gray-600 */
+}
+.aa-input-contrast:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99,102,241,.35);
+}
+
+/* select/option: 드롭다운 열렸을 때 배경/글자색 명확히 */
+.aa-select {
+    background-color: #0f172a; /* slate-900 */
+    color: #e2e8f0;            /* slate-200 */
+    border: 1px solid #334155; /* slate-700 */
+    border-radius: .5rem;
+    padding: .5rem .75rem;
+}
+.aa-select:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99,102,241,.35);
+}
+.aa-select option {
+    background: #ffffff; /* 드롭다운 목록 배경은 흰색 */
+    color: #0f172a;      /* 글자는 어두운색으로 */
+}
+
+/* 좌측 필터 chips */
+.aa-chip {
+    border: 1px solid #334155;
+    background: #0b1220;
+    color: #cbd5e1;
+    border-radius: 999px;
+    padding: .25rem .65rem;
+    font-size: .85rem;
+}
+.aa-chip-on {
+    background: #4f46e5; /* indigo-600 */
+    color: #fff;
+    border-color: #4338ca; /* indigo-700 */
+}

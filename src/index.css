@@ -1,0 +1,54 @@
+/* src/index.css */
+
+/* Tailwind v4: 전역 한 번만 */
+@import "tailwindcss";
+
+/* ----- 베이스 ----- */
+html, body, #root { height: 100%; }
+body {
+    font-family: ui-sans-serif, system-ui, -apple-system, "Apple SD Gothic Neo",
+    "Segoe UI", "Roboto", "Noto Sans KR", Arial, sans-serif;
+}
+
+/* ----- 전역 유틸/컴포넌트 ----- */
+/* Tailwind 유틸만 @apply 해서 만듭니다 */
+.glass-card {
+    @apply bg-white/10 backdrop-blur-xl border border-white/15
+    rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.45)];
+}
+
+.auth-container { @apply min-h-screen relative flex items-center justify-center overflow-hidden bg-slate-950 text-white; }
+.auth-panel     { @apply grid w-full max-w-6xl gap-8 px-4 md:grid-cols-2; }
+.brand-panel    { @apply hidden md:flex flex-col justify-center gap-6; }
+.brand-title    { @apply text-4xl md:text-5xl font-extrabold tracking-tight leading-tight; }
+.brand-subtitle { @apply text-base md:text-lg text-white/80; }
+
+/* 카드 래퍼 */
+.card-wrap { @apply p-6 md:p-8 w-full max-w-md md:max-w-none md:w-full; }
+
+/* 버튼 베이스 */
+.btn {
+    @apply inline-flex items-center justify-center rounded-xl px-4 py-3 font-semibold
+    transition active:scale-[0.99] focus:outline-none focus-visible:ring-2;
+}
+.btn-primary {
+    @apply inline-flex items-center justify-center rounded-xl px-4 py-3 font-semibold
+    transition active:scale-[0.99] focus:outline-none focus-visible:ring-2
+    bg-indigo-500 hover:bg-indigo-400 text-white focus-visible:ring-indigo-300;
+}
+
+.link-ghost  { @apply font-medium text-indigo-200 hover:text-white transition; }
+
+.input-label { @apply block text-sm font-medium mb-2 text-white/90; }
+.input-base  { @apply w-full rounded-xl bg-white/5 border border-white/20 px-4 py-3
+placeholder-white/50 text-white
+focus:outline-none focus:ring-2 focus:ring-indigo-400/60 focus:border-transparent; }
+
+/* ----- 배경 블롭 애니메이션 ----- */
+@keyframes float {
+    0%, 100% { transform: translateY(0) translateX(0); }
+    50%      { transform: translateY(-14px) translateX(6px); }
+}
+.animate-float-slow   { animation: float 12s ease-in-out infinite; }
+.animate-float-slower { animation: float 18s ease-in-out infinite; }
+.blob { filter: blur(60px); opacity: .35; }
