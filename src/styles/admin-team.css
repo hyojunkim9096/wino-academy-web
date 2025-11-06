@@ -2,10 +2,10 @@
  * admin-team.css (TeamAdminPage 전용) - 2025-11-05 리팩토링 확정본
  * - 네임스페이스: .team-admin / .ta-*
  * - 변경점:
- *   1) max-width 가변: --ta-max만 사용(정의되지 않은 --admin-max 제거)
- *   2) 좌측 사이드폭 clamp로 가변(큰 화면 여유, 작은 화면 안전)
- *   3) .ta-right 남용 제거 → .ta-main(우측 레이아웃) / .ta-align-right(텍스트 정렬)
- *   4) TeamCreateModal용 보조 유틸 클래스 포함
+ * 1) max-width 가변: --ta-max만 사용(정의되지 않은 --admin-max 제거)
+ * 2) 좌측 사이드폭 clamp로 가변(큰 화면 여유, 작은 화면 안전)
+ * 3) .ta-right 남용 제거 → .ta-main(우측 레이아웃) / .ta-align-right(텍스트 정렬)
+ * 4) TeamCreateModal용 보조 유틸 클래스 포함
  * ========================================================================== */
 
 :root {
@@ -127,12 +127,34 @@
 .ta-members { display:flex; flex-direction: column; gap: 8px; }
 .ta-member {
     display:flex; align-items: center; justify-content: space-between;
+    gap: 8px; /* ✅ 갭 추가 */
     padding:8px; border:1px solid #1f2937; border-radius: 8px;
+    flex-wrap: nowrap; /* ✅ 모바일에서도 줄바꿈 방지 */
 }
-.ta-member-info { min-width:0; }
+.ta-member-info { min-width:0; flex-shrink: 1; } /* ✅ 텍스트 영역이 줄어들도록 */
 .ta-member-name { font-weight:600; }
 .ta-member-sub { font-size:12px; color:#94a3b8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.ta-member-ops { display:flex; align-items:center; gap:6px; }
+
+/* ✅ [요청 6] 구성원 액션 (우측 버튼 영역) */
+.ta-member-ops {
+    display:flex;
+    align-items:center;
+    gap:6px;
+    flex-wrap: nowrap; /* ✅ 줄바꿈 방지 */
+    flex-shrink: 0; /* ✅ 이 영역이 줄어들지 않도록 */
+}
+/* ✅ [요청 6] 셀렉트 박스 최소 폭 지정 */
+.ta-member-ops .ta-select {
+    min-width: 80px;
+    width: auto; /* 고정 폭 대신 auto */
+    flex-shrink: 0; /* 줄어들지 않게 */
+}
+/* ✅ [요청 6] 버튼 줄어들지 않게 */
+.ta-member-ops .ta-btn {
+    flex-shrink: 0;
+    white-space: nowrap; /* "팀장지정" 줄바꿈 방지 */
+}
+
 
 /* ---- 유틸리티: 텍스트 우측 정렬(기존 .ta-right 대체) ---- */
 .ta-align-right { text-align: right; }

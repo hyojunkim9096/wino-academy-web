@@ -1,16 +1,7 @@
 // src/features/admin/components/team/TeamCreateModal.jsx
-// ----------------------------------------------------------------------------
-// TeamCreateModal
-// - 새 팀 생성 전용 모달(팀명/관 선택 + 직원 검색으로 1명 선택 → 팀장 지정 가능)
-// - props
-//    open: boolean               // 모달 열림 여부
-//    onClose: ()=>void           // 닫기 콜백
-//    locCodes: Array<{code,name,sortOrder?}>
-//    defaultWorkLoc: string      // 부모 필터의 현재 관 코드(초기값으로 사용)
-//    onCreated: (newTeamId)=>void// 생성 성공 시 신규 팀 ID 콜백
-// - 의존: admin-team.css 의 .ta-* 클래스, SweetAlert2 래퍼(alertSuccess/alertError)
-// ----------------------------------------------------------------------------
-import React, { useEffect, useRef, useState } from 'react';
+
+// ✅ useMemo 임포트 확인
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createTeam } from '@/api/teamApi';
 import { listStaffs } from '@/api/staffApi';
 import { alertError, alertSuccess } from '@/ui/alert';
@@ -23,30 +14,41 @@ const sortLocs = (arr = []) =>
             String(a.name).localeCompare(String(b.name), 'ko'),
     );
 
+// ✅ toMap 유틸 (useMemo가 사용)
+const toMap = (arr = []) =>
+    Object.fromEntries(arr.map((x) => [String(x.code).toUpperCase(), x]));
+
+
 export default function TeamCreateModal({
                                             open,
                                             onClose,
                                             locCodes = [],
                                             defaultWorkLoc = '',
                                             onCreated,
+                                            EmpTypeFilter, // ✅ [요청] 부모로부터 필터 컴포넌트 받기
                                         }) {
-    // ── 폼 상태 ────────────────────────────────────────────────────────────────
+    // ── 1. 폼 상태 (Hooks) ───────────────────────────────────────────────────
     const [teamName, setTeamName] = useState('');
+    const [teamCode, setTeamCode] = useState('');
     const [workLoc, setWorkLoc] = useState(defaultWorkLoc || '');
     const [kw, setKw] = useState('');
+    const [empType, setEmpType] = useState(''); // ✅ [요청] 팀장 검색용 직원 유형 필터 상태
     const [rows, setRows] = useState([]);
     const [selectedLeaderId, setSelectedLeaderId] = useState(null);
     const [saving, setSaving] = useState(false);
 
-    // 디바운스 타이머 ref
+    // 디바운스 타이머 ref (Hook)
     const debRef = useRef(null);
 
+    // ── 2. 이펙트 훅 (Hooks) ──────────────────────────────────────────────────
     // 열렸을 때 초기화
     useEffect(() => {
         if (!open) return;
         setTeamName('');
+        setTeamCode('');
         setWorkLoc(defaultWorkLoc || '');
         setKw('');
+        setEmpType(''); // ✅ [요청] 필터 초기화
         setRows([]);
         setSelectedLeaderId(null);
     }, [open, defaultWorkLoc]);
@@ -69,6 +71,7 @@ export default function TeamCreateModal({
             try {
                 const res = await listStaffs({
                     workLocation: workLoc || undefined,
+                    employeeType: empType || undefined, // ✅ [요청] 직원 유형 파라미터 추가
                     keyword: kw || undefined,
                     page: 0,
                     size: 20,
@@ -83,9 +86,16 @@ export default function TeamCreateModal({
                 setRows([]);
             }
         }, 250);
+        // ✅ [요청] empType 변경 시에도 재검색
         return () => clearTimeout(debRef.current);
-    }, [kw, workLoc, open]);
+    }, [kw, workLoc, empType, open]);
 
+    // ── 3. 헬퍼 훅 (Hooks) ───────────────────────────────────────────────────
+    const locMap = useMemo(() => toMap(locCodes), [locCodes]);
+    const locName = (code) =>
+        locMap[String(code || '').toUpperCase()]?.name || code || '전체';
+
+    // ── 4. 핸들러 함수 ───────────────────────────────────────────────────────
     // 제출
     const onSubmit = async () => {
         const name = teamName.trim();
@@ -93,17 +103,21 @@ export default function TeamCreateModal({
             alertError('입력 필요', '팀명을 입력하세요.');
             return;
         }
+
+        const code = teamCode.trim() || null;
+
         setSaving(true);
         try {
             const payload = {
                 teamName: name,
-                workLocation: workLoc || null, // 비우면 공용
+                teamCode: code,
+                workLocation: workLoc || null,
                 description: null,
                 status: 'ACTIVE',
-                leaderAdminId: selectedLeaderId || null, // 팀장 미지정 허용
+                leaderAdminId: selectedLeaderId || null,
             };
             const res = await createTeam(payload);
-            const newId = res?.id ?? res; // {id} 또는 숫자 응답 대응
+            const newId = res?.id ?? res;
             await alertSuccess('성공', '팀이 생성되었습니다.');
             onClose?.();
             onCreated?.(newId);
@@ -114,9 +128,12 @@ export default function TeamCreateModal({
         }
     };
 
+    // ── 5. 조기 반환 (모든 Hooks가 호출된 이후) ─────────────────────────────
     if (!open) return null;
 
+    //
     const locs = sortLocs(locCodes);
+
 
     return (
         <div className="ta-modal-backdrop" onClick={onClose}>
@@ -153,22 +170,35 @@ export default function TeamCreateModal({
                         </div>
 
                         <div>
-                            <div className="ta-field-label">소속 관(Work Location)</div>
-                            <select
-                                className="ta-select"
-                                value={workLoc}
-                                onChange={(e) => setWorkLoc(e.target.value)}
-                            >
-                                <option value="">전체/공용</option>
-                                {(locs || []).map((l) => (
-                                    <option key={l.code} value={l.code}>
-                                        {l.name} ({l.code})
-                                    </option>
-                                ))}
-                            </select>
-                            <div className="ta-help">비우면 공용 팀으로 생성됩니다.</div>
+                            <div className="ta-field-label">팀 코드 (선택)</div>
+                            <input
+                                className="ta-input"
+                                placeholder="예: ENG-E-1 (고유해야 함)"
+                                value={teamCode}
+                                onChange={(e) => setTeamCode(e.target.value)}
+                                maxLength={64}
+                            />
+                            <div className="ta-help">비워두거나 식별 가능한 코드를 입력하세요.</div>
                         </div>
                     </div>
+
+                    <div style={{ marginTop: '10px' }}>
+                        <div className="ta-field-label">소속 관(Work Location)</div>
+                        <select
+                            className="ta-select"
+                            value={workLoc}
+                            onChange={(e) => setWorkLoc(e.target.value)}
+                        >
+                            <option value="">전체/공용</option>
+                            {(locs || []).map((l) => (
+                                <option key={l.code} value={l.code}>
+                                    {l.name} ({l.code})
+                                </option>
+                            ))}
+                        </select>
+                        <div className="ta-help">비우면 공용 팀으로 생성됩니다.</div>
+                    </div>
+
 
                     {/* ── 팀장 선택(선택 사항) ─────────────────────────────────────── */}
                     <div className="ta-section" style={{ marginTop: 14 }}>
@@ -176,6 +206,9 @@ export default function TeamCreateModal({
                             <div className="ta-section-title">팀장 지정(선택)</div>
                             {selectedLeaderId && <span className="ta-badge">선택됨</span>}
                         </div>
+
+                        {/* ✅ [요청] 직원 유형 필터 UI 추가 */}
+                        {EmpTypeFilter && <EmpTypeFilter value={empType} onChange={setEmpType} />}
 
                         {/* 검색어 */}
                         <div className="ta-modal-field">
@@ -213,8 +246,9 @@ export default function TeamCreateModal({
                                                 {u.userName}{' '}
                                                 <span className="ta-mono">({u.userId})</span>
                                             </div>
+                                            {/* ✅ [수정] 팀장 검색 결과의 관 코드 -> 이름으로 변경 */}
                                             <div className="ta-modal-item-sub">
-                                                {u.workLocation || '-'} · {u.email || u.phoneNumber || '-'}
+                                                {locName(u.workLocation)} · {u.email || u.phoneNumber || '-'}
                                             </div>
                                         </div>
                                         <input

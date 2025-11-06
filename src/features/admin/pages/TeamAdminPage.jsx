@@ -1,18 +1,10 @@
-// ============================================================================
 // TeamAdminPage.jsx
-// 팀 관리 화면
-// - 좌측: 필터 + 팀 목록
-// - 우측: 팀 상세 + 편집 + 멤버 관리(추가/역할변경/활성/삭제/팀장지정)
-// - "새 팀"은 전용 모달(TeamCreateModal)로 생성 (팀명/관 선택 + 팀장 선택 가능)
-// - 프로젝트 규칙: SweetAlert2 래퍼(alert/confirm), 저장 후 자동 재조회, 편집 종료
-// - 공통코드 WORK_LOCATION을 사용해 관 코드를 선택
-// ============================================================================
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
     listTeams,
     getTeam,
-    // createTeam,  // ✅ 모달 내부에서 처리 → 불필요하여 제거
+    // createTeam,  // ✅ 모달 내부에서 처리 → 불필H하여 제거
     updateTeam,
     deleteTeam,
     addTeamMember,
@@ -27,7 +19,7 @@ import { alertError, alertSuccess, confirm } from '@/ui/alert';
 import TeamCreateModal from '@/features/admin/components/team/TeamCreateModal'; // ✅ 새 팀 생성 모달
 
 // 전역/페이지 공통 스타일
-import '@/styles/admin-system.css';
+import '@/styles/admin-system.css'; // ✅ .aa-seg 스타일이 여기 있습니다.
 import '@/styles/admin-team.css';
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -49,6 +41,36 @@ function SimpleModal({ open, title, onClose, children }) {
         </div>
     );
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// ✅ [요청] 직원 유형(STAFF/TEACHER) 필터 옵션
+// ────────────────────────────────────────────────────────────────────────────
+const EMP_TYPES = [
+    { code: '', name: '전체' },      //
+    { code: 'STAFF', name: '직원' },
+    { code: 'TEACHER', name: '강사' },
+];
+
+/**
+ * ✅ [요청] 직원 유형 필터 UI 컴포넌트
+ * admin-system.css의 .aa-seg 스타일을 사용합니다.
+ */
+function EmpTypeFilter({ value, onChange }) {
+    return (
+        <div className="aa-seg" style={{ marginBottom: '10px' }}>
+            {EMP_TYPES.map((t) => (
+                <button
+                    key={t.code}
+                    className={`aa-btn ${value === t.code ? 'is-active' : ''}`}
+                    onClick={() => onChange(t.code)}
+                >
+                    {t.name}
+                </button>
+            ))}
+        </div>
+    );
+}
+
 
 // 상태 필터 옵션
 const STATUS = [
@@ -96,6 +118,7 @@ export default function TeamAdminPage() {
     // 구성원 추가 모달
     const [mOpen, setMOpen] = useState(false);
     const [mKw, setMKw] = useState('');
+    const [mEmpType, setMEmpType] = useState(''); // ✅ [요청] 구성원 모달용 직원 유형 필터 상태
     const [mRes, setMRes] = useState([]);
     const mDebRef = useRef(null);
 
@@ -194,17 +217,21 @@ export default function TeamAdminPage() {
     // ── 저장(상세 편집 저장) ────────────────────────────────────────────
     const onSave = async () => {
         if (!selectedId || !edit) return;
+
+        const payload = {
+            // teamCode는 수정 시 제외 (고유값)
+            teamName: (edit.teamName || '').trim(),
+            description: edit.description || null,
+            workLocation: edit.workLocation || null, // 빈 값이면 공용
+            status: edit.status || 'ACTIVE',
+            leaderAdminId: edit.leaderAdminId || null,
+        };
+
         setSaving(true);
         try {
-            await updateTeam(selectedId, {
-                teamCode: edit.teamCode || null,
-                teamName: (edit.teamName || '').trim(),
-                description: edit.description || null,
-                workLocation: edit.workLocation || null, // 빈 값이면 공용
-                status: edit.status || 'ACTIVE',
-                leaderAdminId: edit.leaderAdminId || null,
-            });
-            const d = await getTeam(selectedId);
+            await updateTeam(selectedId, payload);
+
+            const d = await getTeam(selectedId, { activeOnly: false });
             setDetail(d);
             setEdit(toEditModel(d));
             setEditing(false);
@@ -235,6 +262,7 @@ export default function TeamAdminPage() {
     // ── 구성원 추가 모달 오픈 ───────────────────────────────────────────
     const openMemberModal = () => {
         setMKw('');
+        setMEmpType(''); // ✅ [요청] 모달 열 때 필터 초기화
         setMRes([]);
         setMOpen(true);
     };
@@ -247,6 +275,7 @@ export default function TeamAdminPage() {
             try {
                 const res = await listStaffs({
                     workLocation: edit?.workLocation || undefined, // 현재 팀의 관 기준으로 우선 검색
+                    employeeType: mEmpType || undefined, // ✅ [요청] 직원 유형 파라미터 추가
                     keyword: mKw || undefined,
                     page: 0,
                     size: 20,
@@ -262,13 +291,15 @@ export default function TeamAdminPage() {
             }
         }, 250);
         return () => clearTimeout(mDebRef.current);
-    }, [mKw, mOpen, edit?.workLocation]);
+        // ✅ [요청] mEmpType이 변경될 때도 검색 실행
+    }, [mKw, mEmpType, mOpen, edit?.workLocation]);
 
     // ── 구성원 추가/수정/삭제/팀장지정 ─────────────────────────────────
     const addMemberAction = async (adminId, role = 'MEMBER') => {
         try {
             await addTeamMember(selectedId, { adminId, roleInTeam: role });
             await refreshDetail();
+            await loadList(true); // ✅ 좌측 목록 새로고침
             setMOpen(false);
             await alertSuccess('성공', '구성원이 추가되었습니다.');
         } catch (e) {
@@ -291,6 +322,7 @@ export default function TeamAdminPage() {
         try {
             await updateTeamMember(selectedId, m.id, patch);
             await refreshDetail();
+            await loadList(true); // ✅ 좌측 목록 새로고침
         } catch (e) {
             alertError('오류', e?.response?.data?.message || '구성원 수정 실패');
         }
@@ -302,21 +334,51 @@ export default function TeamAdminPage() {
         try {
             await removeTeamMember(selectedId, m.id);
             await refreshDetail();
+            await loadList(true); // ✅ 좌측 목록 새로고침
         } catch (e) {
             alertError('오류', e?.response?.data?.message || '구성원 삭제 실패');
         }
     };
 
+    // (버그 수정) refreshDetail 함수 (수정 중 상태 덮어쓰기 방지)
     const refreshDetail = async () => {
-        const d = await getTeam(selectedId);
-        setDetail(d);
-        setEdit(toEditModel(d));
+        if (!selectedId) return;
+        try {
+            const d = await getTeam(selectedId, { activeOnly: false });
+            setDetail(d);
+
+            if (editing) {
+                setEdit((prevEdit) => ({
+                    ...prevEdit,
+                    leaderAdminId: d.leaderAdminId,
+                    leaderName: d.leaderName,
+                }));
+            } else {
+                setEdit(toEditModel(d));
+            }
+        } catch (e) {
+            alertError('오류', e?.response?.data?.message || '팀 상세 정보 갱신 실패');
+            setDetail(null);
+            setEdit(null);
+            setEditing(false);
+            setSelectedId(null);
+            await loadList(false);
+        }
     };
 
-    // 관 코드 → 이름 맵
+    // ── 헬퍼 함수 ───────────────────────────────────────────────────────
+
+    // ✅ 관 코드 -> 이름 변환 맵
     const locMap = useMemo(() => toMap(locCodes), [locCodes]);
     const locName = (code) =>
-        locMap[String(code || '').toUpperCase()]?.name || code || '-';
+        locMap[String(code || '').toUpperCase()]?.name || code || '전체';
+
+    // ✅ 상태 코드 -> 이름 변환
+    const statusName = (code) => {
+        if (code === 'ACTIVE') return '활성';
+        if (code === 'INACTIVE') return '비활성';
+        return code;
+    }
 
     return (
         <section className="team-admin">
@@ -391,7 +453,8 @@ export default function TeamAdminPage() {
                                         >
                                             <div className="ta-item-name">{item.teamName}</div>
                                             <div className="ta-item-sub">
-                                                {item.workLocation || '전체'} ·{' '}
+                                                {/* ✅ 소속관 이름 표시 */}
+                                                {locName(item.workLocation)} ·{' '}
                                                 {item.leaderName
                                                     ? `팀장 ${item.leaderName}`
                                                     : '팀장 미지정'}{' '}
@@ -487,6 +550,7 @@ export default function TeamAdminPage() {
                                         )}
                                     </Field>
 
+                                    {/* 팀 코드 수정 시 readOnly 처리 */}
                                     <Field label="팀 코드">
                                         {!editing ? (
                                             <RO>{detail.teamCode || '-'}</RO>
@@ -494,9 +558,10 @@ export default function TeamAdminPage() {
                                             <input
                                                 className="ta-input"
                                                 value={edit.teamCode || ''}
-                                                onChange={(e) =>
-                                                    setEdit((v) => ({ ...v, teamCode: e.target.value }))
-                                                }
+                                                readOnly
+                                                disabled
+                                                title="팀 코드는 생성 후 수정할 수 없습니다."
+                                                style={{ background: '#1f2937', cursor: 'not-allowed' }}
                                             />
                                         )}
                                     </Field>
@@ -509,7 +574,6 @@ export default function TeamAdminPage() {
                                                     : '전체'}
                                             </RO>
                                         ) : (
-                                            // ✅ 공통코드 기반 선택 (비우면 공용)
                                             <select
                                                 className="ta-select"
                                                 value={edit.workLocation || ''}
@@ -530,9 +594,10 @@ export default function TeamAdminPage() {
                                         )}
                                     </Field>
 
+                                    {/* 상태 표시 형식 변경 */}
                                     <Field label="상태">
                                         {!editing ? (
-                                            <RO>{detail.status}</RO>
+                                            <RO>{statusName(detail.status)} ({detail.status})</RO>
                                         ) : (
                                             <select
                                                 className="ta-select"
@@ -541,8 +606,8 @@ export default function TeamAdminPage() {
                                                     setEdit((v) => ({ ...v, status: e.target.value }))
                                                 }
                                             >
-                                                <option value="ACTIVE">ACTIVE</option>
-                                                <option value="INACTIVE">INACTIVE</option>
+                                                <option value="ACTIVE">활성 (ACTIVE)</option>
+                                                <option value="INACTIVE">비활성 (INACTIVE)</option>
                                             </select>
                                         )}
                                     </Field>
@@ -551,7 +616,6 @@ export default function TeamAdminPage() {
                                         {!editing ? (
                                             <RO>{detail.leaderName || '-'}</RO>
                                         ) : (
-                                            // 팀장은 구성원 섹션에서 지정하도록 only-read
                                             <input
                                                 className="ta-input"
                                                 value={edit.leaderName || ''}
@@ -592,22 +656,17 @@ export default function TeamAdminPage() {
                                             <div key={m.id} className="ta-member">
                                                 <div className="ta-member-info">
                                                     <div className="ta-member-name">{m.userName}</div>
+                                                    {/* ✅ [수정] 구성원 목록의 관 코드 -> 이름으로 변경 */}
                                                     <div className="ta-member-sub">
-                                                        {m.workLocation || '-'} · 참여 {fmtDate(m.joinedAt)}
+                                                        {locName(m.workLocation)} · 참여 {fmtDate(m.joinedAt)}
                                                         {m.leftAt ? ` ~ ${fmtDate(m.leftAt)}` : ''}
                                                     </div>
                                                 </div>
                                                 <div className="ta-member-ops">
-                                                    <select
-                                                        className="ta-select"
-                                                        value={m.roleInTeam}
-                                                        onChange={(e) =>
-                                                            updateMemberAction(m, { roleInTeam: e.target.value })
-                                                        }
-                                                    >
-                                                        <option value="MEMBER">MEMBER</option>
-                                                        <option value="LEADER">LEADER</option>
-                                                    </select>
+
+                                                    {/* ✅ [요청 1] 역할(MEMBER/LEADER) <select> 제거 */}
+                                                    {/* "팀장지정" 버튼으로 역할을 관리합니다. */}
+
                                                     <select
                                                         className="ta-select"
                                                         value={m.activeYn}
@@ -647,6 +706,10 @@ export default function TeamAdminPage() {
 
             {/* 구성원 추가 모달 */}
             <SimpleModal open={mOpen} title="구성원 추가" onClose={() => setMOpen(false)}>
+
+                {/* ✅ [요청] 직원 유형 필터 UI 추가 */}
+                <EmpTypeFilter value={mEmpType} onChange={setMEmpType} />
+
                 <div className="ta-modal-field">
                     <input
                         className="ta-input"
@@ -662,8 +725,9 @@ export default function TeamAdminPage() {
                                 <div className="ta-modal-item-name">
                                     {u.userName} <span className="ta-mono">({u.userId})</span>
                                 </div>
+                                {/* ✅ [수정] 구성원 추가 모달의 관 코드 -> 이름으로 변경 */}
                                 <div className="ta-modal-item-sub">
-                                    {u.workLocation} · {u.email || u.phoneNumber || '-'}
+                                    {locName(u.workLocation)} · {u.email || u.phoneNumber || '-'}
                                 </div>
                             </div>
                             <div className="ta-modal-item-ops">
@@ -697,6 +761,8 @@ export default function TeamAdminPage() {
                 locCodes={locCodes}
                 defaultWorkLoc={workLoc}
                 onCreated={handleCreated}
+                // ✅ [요청] EmpTypeFilter 컴포넌트 전달
+                EmpTypeFilter={EmpTypeFilter}
             />
         </section>
     );
