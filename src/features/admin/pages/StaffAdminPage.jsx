@@ -1,4 +1,4 @@
-// src/main/react/StaffAdminPage.jsx
+// src/features/admin/pages/StaffAdminPage.jsx
 // 직원 관리 화면
 // - 좌측 목록: 이름 오름차순 정렬
 // - 우측 상세: 아바타 클릭 시 이미지 확대 모달
@@ -6,18 +6,31 @@
 // - ✅ 구분(EmployeeType: STAFF/TEACHER) 수정 가능
 // - ✅ 사진 경로 처리: photoUrl 우선, 없으면 photoPath → /uploads/** 로 변환
 // - ✅ 캐시버스터로 업로드 직후 새 이미지 보장
+// - ✅ 주소 필드(postalCode/address/detailAddress) 표시 및 편집
+// - ✅ 편집 모드에서만 "우편번호 검색" 버튼 노출
+// - ✅ employeeType=ALL 은 목록 API 쿼리에서 제외 (백엔드 Enum 변환 오류 예방)
+// - ✅ AddressSearch 개선 대응: children 대신 buttonLabel 사용
+// - ✅ 비상 연락처 필드(emergencyContact) 바인딩 오류 수정
+// - ✅ 스타일/레이아웃: admin-system.css 먼저, 페이지 전용 CSS 이후
+// - ✅ 칩 선택 표시/목록 선택 하이라이트/라벨 줄바꿈 보정/목록 파싱 버그 수정
+// - ✅ Modal.jsx(v2) 대응: 모달 폭은 size 프리셋(sm/md/lg/xl/2xl/full) 사용
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { listStaffs, getStaff, updateStaff, changeStaffPassword, uploadStaffPhoto } from '@/api/staffApi';
 import { getCodes } from '@/api/commonCodeAdminApi';
 import { alertError, alertInfo, alertSuccess } from '@/ui/alert';
-import Modal from '@/components/ui/Modal';            // 공통 모달
-import Avatar from '@/components/ui/Avatar';          // 공통 아바타(아래에서 src도 함께 전달)
-import { useImagePreview } from '@/components/ui/ImagePreview'; // 프리뷰 훅(최신 버전은 url 인자를 지원)
-import { uploadsUrl, withBust } from '@/utils/mediaUrl';        // ✅ /uploads URL 빌더 + 캐시버스터
-import '@/styles/admin.css';
+import Modal from '@/components/ui/Modal';
+import Avatar from '@/components/ui/Avatar';
+import { useImagePreview } from '@/components/ui/ImagePreview';
+import { uploadsUrl, withBust } from '@/utils/mediaUrl';
+import AddressSearch from '@/components/AddressSearch';
+
+// ✅ 시스템 토큰/베이스를 먼저 로드
+import '@/styles/admin-system.css';
+import '@/styles/admin-shared.css';
 import '@/styles/admin-staff.css';
-import '@/styles/admin-system.css'; // ✅ 항상 마지막에(다크 테마/배경 플리커 방지)
+// (선택) 범용 admin 유틸
+import '@/styles/admin.css';
 
 const safeInfo  = (t,m)=>Promise.resolve(alertInfo(t,m)).catch(()=>{});
 const safeOk    = (t,m)=>Promise.resolve(alertSuccess(t,m)).catch(()=>{});
@@ -33,16 +46,16 @@ const EMP_TYPES = [
 const toMap  = (arr=[]) => Object.fromEntries(arr.map(x => [String(x.code).trim().toUpperCase(), x]));
 const sorted = (arr=[]) => arr.slice().sort((a,b)=>(a.sortOrder??0)-(b.sortOrder??0) || String(a.name).localeCompare(b.name,'ko'));
 
-/** ✅ 사진 URL 계산
- * 1) 서버 DTO가 photoUrl을 주면 그대로 사용 (가장 안전)
+/** 사진 URL 계산
+ * 1) 서버 DTO가 photoUrl을 주면 그대로 사용
  * 2) 아니면 photoPath(절대/상대 모두 허용) → /uploads/** 로 변환
- * 3) (백엔드가 fileId만 주는 구버전 호환) fileId가 있고 photoUrl/Path가 없으면 null 반환 → Avatar의 fileId 처리에 위임
+ * 3) 둘 다 없으면 '' (Avatar(fileId) 처리에 위임)
  */
 function buildPhotoSrc(row){
     if (!row) return '';
-    if (row.photoUrl) return row.photoUrl;
-    if (row.photoPath) return uploadsUrl(row.photoPath); // 절대/상대 자동 정규화
-    return ''; // fileId만 있는 경우는 Avatar가 자체 처리(구버전 호환)
+    if (row.photoUrl)  return row.photoUrl;
+    if (row.photoPath) return uploadsUrl(row.photoPath);
+    return '';
 }
 
 export default function StaffAdminPage() {
@@ -78,7 +91,7 @@ export default function StaffAdminPage() {
 
     // ===== 이미지 캐시버스팅 & 미리보기 =====
     const [imgVersion, setImgVersion] = useState(0);
-    const { openPreview, PreviewPortal } = useImagePreview(imgVersion); // 최신 훅은 (fileId, name, url)도 허용
+    const { openPreview, PreviewPortal } = useImagePreview(imgVersion);
 
     // === 공통코드 로드 ===
     useEffect(() => {
@@ -113,14 +126,21 @@ export default function StaffAdminPage() {
         setLoading(true);
         const my = ++inflight.current;
         try {
+            // ⭐ 'ALL'이면 employeeType 파라미터 제외(백엔드 Enum 바인딩 오류 방지)
             const res = await listStaffs({
-                employeeType: empType,
+                employeeType: empType === 'ALL' ? undefined : empType,
                 workLocation: workLoc || undefined,
                 keyword: kwDebounced || undefined,
                 page: 0, size: 30,
             });
+
             if (my !== inflight.current) return;
-            const rows = res?.content || [];
+
+            // ✅ 목록 파싱 안전화 (페이지형/배열형 모두 지원)
+            const rows =
+                Array.isArray(res?.content) ? res.content :
+                    (Array.isArray(res) ? res : []);
+
             setList(rows);
             setSelectedId(prev => {
                 if (keepSelection && prev && rows.some(r => r.id === prev)) return prev;
@@ -139,13 +159,19 @@ export default function StaffAdminPage() {
 
     // === 편집용 모델 변환 ===
     const toEdit = (d) => ({
-        userName:     d?.userName ?? '',
-        email:        d?.email ?? '',
-        phoneNumber:  d?.phoneNumber ?? '',
-        roleCode:     d?.roleCode ?? 'ROLE_STAFF',
-        workLocation: d?.workLocation ?? (locCodes[0]?.code ?? ''),
-        status:       d?.status ?? 'TEMPORARY',
-        employeeType: d?.employeeType ?? 'STAFF',
+        userName:         d?.userName ?? '',
+        email:            d?.email ?? '',
+        phoneNumber:      d?.phoneNumber ?? '',
+        emergencyContact: d?.emergencyContact ?? '',
+        roleCode:         d?.roleCode ?? 'ROLE_STAFF',
+        workLocation:     d?.workLocation ?? (locCodes[0]?.code ?? ''),
+        status:           d?.status ?? 'TEMPORARY',
+        // ✅ 예외값 방지: employeeType 기본값 보정
+        employeeType:     (d?.employeeType === 'TEACHER' || d?.employeeType === 'STAFF') ? d.employeeType : 'STAFF',
+        // 주소
+        postalCode:       d?.postalCode ?? '',
+        address:          d?.address ?? '',
+        detailAddress:    d?.detailAddress ?? '',
     });
 
     // === 상세 로드 (선택/업로드 후) ===
@@ -164,7 +190,7 @@ export default function StaffAdminPage() {
             }
         })();
         return ()=>{ alive=false; };
-    }, [selectedId, imgVersion]); // imgVersion 변경 시에도 상세 재로딩 → 새 이미지 반영
+    }, [selectedId, imgVersion]); // 이미지 갱신 시에도 재조회
 
     // === 저장 ===
     const onSave = async () => {
@@ -172,13 +198,17 @@ export default function StaffAdminPage() {
         setSaving(true);
         try {
             await updateStaff(selectedId, {
-                userName:     edit.userName,
-                email:        edit.email,
-                phoneNumber:  edit.phoneNumber,
-                roleCode:     edit.roleCode,
-                workLocation: edit.workLocation,
-                status:       edit.status,
-                employeeType: edit.employeeType,
+                userName:         edit.userName,
+                email:            edit.email,
+                phoneNumber:      edit.phoneNumber,
+                emergencyContact: edit.emergencyContact,
+                roleCode:         edit.roleCode,
+                workLocation:     edit.workLocation,
+                status:           edit.status,
+                employeeType:     edit.employeeType,
+                postalCode:       edit.postalCode,
+                address:          edit.address,
+                detailAddress:    edit.detailAddress,
             });
             const d = await getStaff(selectedId);
             setDetail(d);
@@ -196,10 +226,10 @@ export default function StaffAdminPage() {
         const file = e.target.files?.[0];
         if (!file) return;
         try {
-            await uploadStaffPhoto(selectedId, file); // 서버가 저장 및 DB photoPath/Url 갱신
-            setImgVersion(v => v + 1);               // ✅ 캐시버스팅
-            await loadList(true);                    // 좌측 목록 갱신
-            const d = await getStaff(selectedId);    // 상세 동기화
+            await uploadStaffPhoto(selectedId, file);
+            setImgVersion(v => v + 1);              // ✅ 캐시버스팅
+            await loadList(true);                    // 좌측 목록 동기화
+            const d = await getStaff(selectedId);    // 우측 상세 동기화
             setDetail(d);
             setEdit(toEdit(d));
             await safeOk('성공', '사진이 변경되었습니다.');
@@ -208,18 +238,18 @@ export default function StaffAdminPage() {
         } finally { e.target.value=''; }
     };
 
-    // 표시명 유틸
     const locName    = (code) => pickName(locMap, code);
     const roleName   = (code) => pickName(roleMap, code);
     const statusName = (code) => pickName(statusMap, code);
     function pickName(map, code){ return map[String(code||'').toUpperCase()]?.name || code || '-'; }
 
     return (
-        <section className="p-6">
-            <div className="aa-container-xxl">
-                <h1 className="text-xl font-semibold text-white mb-4">직원 관리</h1>
+        // ✅ staff-page 클래스로 칩 테마/보조 스타일 활성화 (admin-staff.css 내부 .staff-page … 선택자)
+        <section className="aa-page staff-page">
+            <div className="aa-container">
+                <h1 className="aa-title" style={{marginTop:'0.5rem'}}>직원 관리</h1>
 
-                <div className="grid grid-cols-12 gap-4">
+                <div className="grid grid-cols-12 gap-4" style={{marginTop:'0.5rem'}}>
                     {/* 좌측 3/4 */}
                     <div className="col-span-12 md:col-span-4 lg:col-span-3">
                         <FilterPanel
@@ -254,12 +284,10 @@ export default function StaffAdminPage() {
                             locName={locName} roleName={roleName} statusName={statusName}
                             imgVersion={imgVersion}
                             onPreviewImage={(row)=>{
-                                // 프리뷰: 최신 훅은 (fileId, name, url) 인자를 허용
                                 const url = withBust(buildPhotoSrc(row), imgVersion);
                                 try {
                                     openPreview(row.profileImageId, row.userName, url);
                                 } catch {
-                                    // 구버전 훅 호환: fileId만 넘기고, 훅 내부에서 처리
                                     openPreview(row.profileImageId, row.userName);
                                 }
                             }}
@@ -270,7 +298,8 @@ export default function StaffAdminPage() {
 
             {/* 비밀번호 변경 모달 */}
             {pwOpen && (
-                <Modal onClose={()=>setPwOpen(false)} title="비밀번호 변경">
+                // ✅ Modal.jsx(v2) 대응: 폭은 size 프리셋으로 지정 (sm)
+                <Modal onClose={()=>setPwOpen(false)} title="비밀번호 변경" size="sm">
                     <PasswordModal
                         pwForm={pwForm} setPwForm={setPwForm}
                         saving={pwSaving}
@@ -305,7 +334,7 @@ export default function StaffAdminPage() {
 /* ---------------- 좌측: 필터 ---------------- */
 function FilterPanel({ empType, setEmpType, workLoc, setWorkLoc, keyword, setKeyword, locCodes }) {
     return (
-        <div className="aa-panel-dark p-4 mb-4 space-y-3">
+        <div className="aa-panel p-4 mb-4 space-y-3">
             {/* 대상 */}
             <div className="flex items-center justify-between">
                 <div className="text-sm text-slate-400">대상</div>
@@ -314,7 +343,9 @@ function FilterPanel({ empType, setEmpType, workLoc, setWorkLoc, keyword, setKey
                         <button
                             key={t.key}
                             type="button"
-                            className={`aa-chip ${empType===t.key ? 'aa-chip-on' : ''}`}
+                            // ✅ 칩 선택 표시 강화: 'aa-chip-on' + 'active' + aria-pressed
+                            className={`aa-chip ${empType===t.key ? 'aa-chip-on active' : ''}`}
+                            aria-pressed={empType===t.key}
                             onClick={()=> setEmpType(t.key)}
                             title={t.label}
                         >{t.label}</button>
@@ -322,9 +353,10 @@ function FilterPanel({ empType, setEmpType, workLoc, setWorkLoc, keyword, setKey
                 </div>
             </div>
 
-            {/* 소속 관 */}
+            {/* 소속관 (줄바꿈 방지 + 라벨 합치기) */}
             <div className="flex items-center justify-between gap-3">
-                <div className="text-sm text-slate-400">소속 관</div>
+                {/* ✅ 줄바꿈 방지 + 라벨 합치기: "소속관" */}
+                <div className="text-sm text-slate-400 whitespace-nowrap min-w-[52px]">소속관</div>
                 <select
                     className="aa-select min-w-[160px]"
                     value={workLoc}
@@ -353,32 +385,43 @@ function FilterPanel({ empType, setEmpType, workLoc, setWorkLoc, keyword, setKey
 
 /* ---------------- 좌측: 목록(이름순) ---------------- */
 function ListPanel({ list, loading, selectedId, onSelect, locName, roleName, statusName, imgVersion }) {
-    if (loading) return <div className="aa-panel-dark p-4">불러오는 중…</div>;
-    if (!list?.length) return <div className="aa-panel-dark p-4">결과가 없습니다.</div>;
+    if (loading) return <div className="aa-panel p-4">불러오는 중…</div>;
+    if (!list?.length) return <div className="aa-panel p-4">결과가 없습니다.</div>;
 
     const ordered = [...list].sort((a,b)=>
         (a.userName||'').localeCompare(b.userName||'', 'ko', { sensitivity:'base' })
     );
 
     return (
-        <div className="aa-panel-dark divide-y staff-list-panel">
+        // ✅ 스크롤 패널 + 행 분리선
+        <div className="aa-panel staff-list-panel divide-y">
             {ordered.map(item => {
-                const src = withBust(buildPhotoSrc(item), imgVersion); // ✅ 목록 썸네일도 /uploads URL 사용
+                const selected = selectedId===item.id;
+                const src = withBust(buildPhotoSrc(item), imgVersion);
                 return (
                     <button
                         key={item.id}
                         type="button"
-                        className={`w-full flex items-center gap-3 p-3 text-left transition-colors ${selectedId===item.id ? 'bg-slate-800' : 'hover:bg-slate-800/60'}`}
+                        // ✅ 선택 시 배경 + 좌측 강조선 + 굵은 글씨
+                        className={`w-full flex items-center gap-3 p-3 text-left transition-colors relative ${selected ? 'bg-slate-800 font-semibold' : 'hover:bg-slate-800/60'}`}
                         onClick={() => onSelect(item.id)}
+                        aria-current={selected ? 'true' : 'false'}
                         title={item.userName}
                     >
-                        {/* Avatar가 src prop을 지원하면 사용, fileId는 구버전 호환용 */}
+                        {/* 좌측 강조선 */}
+                        {selected && (
+                            <span
+                                aria-hidden="true"
+                                className="absolute left-0 top-0 h-full"
+                                style={{ width: 3, background: 'var(--aa-accent)' }}
+                            />
+                        )}
                         <Avatar fileId={item.profileImageId} src={src} name={item.userName} version={imgVersion}/>
                         <div className="flex-1 min-w-0">
-                            <div className="font-medium truncate">
-                                {item.userName} <span className="text-slate-400">({locName(item.workLocation)})</span>
+                            <div className="truncate">
+                                {item.userName} <span className="text-slate-400 font-normal">({locName(item.workLocation)})</span>
                             </div>
-                            <div className="text-xs text-slate-400 truncate">
+                            <div className="text-xs text-slate-400 truncate font-normal">
                                 {roleName(item.roleCode)} · {statusName(item.status)}
                             </div>
                         </div>
@@ -394,21 +437,29 @@ function DetailPanel({
                          detail, edit, setEdit, editing, setEditing, onSave, saving, onUploadPhoto,
                          openPw, locCodes, roleCodes, statusCodes, locName, roleName, statusName, imgVersion, onPreviewImage
                      }) {
-    if (!detail) return <div className="aa-panel-dark p-6">좌측에서 대상을 선택하세요.</div>;
+    if (!detail) return <div className="aa-panel p-6">좌측에서 대상을 선택하세요.</div>;
     const set = (k)=>(e)=>setEdit(f=>({ ...f, [k]: e.target.value }));
 
-    const photoSrc = withBust(buildPhotoSrc(detail), imgVersion); // ✅ 상세도 동일 규칙
+    const photoSrc = withBust(buildPhotoSrc(detail), imgVersion);
+
+    // 주소: 상세주소에 포커스 주기
+    const detailAddrRef = useRef(null);
+    const onAddressComplete = ({ postalCode, address }) => {
+        setEdit(f => ({ ...f, postalCode: postalCode || '', address: address || '' }));
+        setTimeout(() => detailAddrRef.current?.focus(), 0);
+    };
+    const maskDetail = (s='') => (s.length <= 3 ? s : s.slice(0,3) + '***');
 
     return (
-        <div className="aa-panel-dark p-6 space-y-5">
+        <div className="aa-panel p-6 space-y-5">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     {/* 아바타: 클릭 시 확대 (편집 중이 아닐 때만) */}
                     {!editing ? (
                         <Avatar
                             size={80}
-                            fileId={detail.profileImageId}  // 구버전 호환
-                            src={photoSrc}                   // ✅ /uploads URL
+                            fileId={detail.profileImageId}
+                            src={photoSrc}
                             name={detail.userName}
                             version={imgVersion}
                             onClick={() => onPreviewImage(detail)}
@@ -439,15 +490,19 @@ function DetailPanel({
                             <button
                                 className="aa-btn"
                                 onClick={()=>{
-                                    // 취소 시 원본으로 복원 (employeeType 포함)
+                                    // 취소 시 원본으로 복원 (employeeType/주소 포함)
                                     setEdit({
-                                        userName:     detail.userName,
-                                        email:        detail.email,
-                                        phoneNumber:  detail.phoneNumber,
-                                        roleCode:     detail.roleCode,
-                                        workLocation: detail.workLocation,
-                                        status:       detail.status,
-                                        employeeType: detail.employeeType ?? 'STAFF',
+                                        userName:         detail.userName,
+                                        email:            detail.email,
+                                        phoneNumber:      detail.phoneNumber,
+                                        emergencyContact: detail.emergencyContact ?? '',
+                                        roleCode:         detail.roleCode,
+                                        workLocation:     detail.workLocation,
+                                        status:           detail.status,
+                                        employeeType:     (detail.employeeType === 'TEACHER' || detail.employeeType === 'STAFF') ? detail.employeeType : 'STAFF',
+                                        postalCode:       detail.postalCode ?? '',
+                                        address:          detail.address ?? '',
+                                        detailAddress:    detail.detailAddress ?? '',
                                     });
                                     setEditing(false);
                                 }}
@@ -460,6 +515,7 @@ function DetailPanel({
                 </div>
             </div>
 
+            {/* 기본 필드들 */}
             <div className="grid md:grid-cols-2 gap-4">
                 <Field label="이름">
                     {!editing ? <Readonly>{detail.userName}</Readonly>
@@ -474,8 +530,8 @@ function DetailPanel({
                         : <input className="aa-input w-full" value={edit.phoneNumber||''} onChange={set('phoneNumber')} />}
                 </Field>
                 <Field label="비상 연락처">
-                    {!editing ? <Readonly>{detail.phoneNumber || '-'}</Readonly>
-                        : <input className="aa-input w-full" value={edit.phoneNumber||''} onChange={set('phoneNumber')} />}
+                    {!editing ? <Readonly>{detail.emergencyContact || '-'}</Readonly>
+                        : <input className="aa-input w-full" value={edit.emergencyContact||''} onChange={set('emergencyContact')} />}
                 </Field>
                 <Field label="소속 관(workLocation)">
                     {!editing ? <Readonly>{locName(detail.workLocation)}</Readonly>
@@ -487,7 +543,7 @@ function DetailPanel({
                             </select>
                         )}
                 </Field>
-                {/* ✅ 구분(EmployeeType) */}
+                {/* 구분(EmployeeType) */}
                 <Field label="구분(EmployeeType)">
                     {!editing ? (
                         <Readonly>{detail.employeeType === 'TEACHER' ? '강사' : '직원'}</Readonly>
@@ -522,6 +578,69 @@ function DetailPanel({
                             </select>
                         )}
                 </Field>
+            </div>
+
+            {/* ───────────────── 주소 섹션 ───────────────── */}
+            <div className="border-t border-slate-700 pt-4 space-y-4">
+                <div className="text-base font-semibold">주소</div>
+
+                {/* 우편번호 + (편집 모드일 때만) 검색 버튼 */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Field label="우편번호">
+                        {!editing ? (
+                            <Readonly>{detail.postalCode || '-'}</Readonly>
+                        ) : (
+                            <div className="flex gap-2">
+                                <input
+                                    className="aa-input w-full"
+                                    value={edit.postalCode || ''}
+                                    onChange={(e)=> setEdit(f=>({ ...f, postalCode: e.target.value.replace(/[^0-9]/g,'').slice(0,5) }))}
+                                    placeholder="우편번호"
+                                    inputMode="numeric"
+                                    maxLength={5}
+                                />
+                                {/* AddressSearch: buttonLabel 사용 */}
+                                <AddressSearch
+                                    onComplete={onAddressComplete}
+                                    className="aa-btn aa-btn-primary whitespace-nowrap"
+                                    buttonLabel="우편번호 검색"
+                                />
+                            </div>
+                        )}
+                    </Field>
+                    <div className="hidden md:block" />
+                </div>
+
+                {/* 주소 | 상세주소 */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Field label="주소">
+                        {!editing ? (
+                            <Readonly>{detail.address || '-'}</Readonly>
+                        ) : (
+                            <input
+                                className="aa-input w-full"
+                                value={edit.address || ''}
+                                onChange={(e)=> setEdit(f=>({ ...f, address: e.target.value }))}
+                                placeholder="우편번호 찾기로 자동 입력"
+                                readOnly
+                            />
+                        )}
+                    </Field>
+                    <Field label="상세주소">
+                        {!editing ? (
+                            <Readonly>{detail.detailAddress ? maskDetail(detail.detailAddress) : '-'}</Readonly>
+                        ) : (
+                            <input
+                                ref={detailAddrRef}
+                                className="aa-input w-full"
+                                value={edit.detailAddress || ''}
+                                onChange={(e)=> setEdit(f=>({ ...f, detailAddress: e.target.value }))}
+                                placeholder="동/호수 등 상세 입력"
+                                maxLength={100}
+                            />
+                        )}
+                    </Field>
+                </div>
             </div>
         </div>
     );

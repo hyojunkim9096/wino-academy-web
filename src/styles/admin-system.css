@@ -1,8 +1,18 @@
-/* src/styles/admin-system.css — Admin 공통 (Dark Base + Modal 다크, 강화판) */
+/* src/styles/admin-system.css
+   Admin 공통 베이스 (Dark Base + Modal + 공용 유틸/컴포넌트)
+   ---------------------------------------------------------------------------
+   ✔ 모든 화면이 우선적으로 import 해야 함
+   ✔ 공용 토큰/유틸/컴포넌트/모달/시간표/TeacherPicker 스킨 포함
+   ✔ 중복 제거 대상: .aa-container-xl, .w-28, button:disabled, cc-editor, TeacherPicker
+   --------------------------------------------------------------------------- */
+
 :root{
     --aa-header-h: 3.5rem;
+
+    /* 🎯 색상 토큰 */
     --aa-bg: #0b1222;
-    --aa-panel:#0f172a;
+    --aa-panel:#0f172a;            /* 기본 패널(다크) */
+    --aa-surface:#ffffff;          /* 대비용 서피스(흰 카드) */
     --aa-text:#e2e8f0;
     --aa-muted:#94a3b8;
     --aa-border:#1e293b;
@@ -17,6 +27,15 @@ body, #root, .app, .admin-app{
     margin:0; padding:0; background: var(--aa-bg) !important; color: var(--aa-text);
     font-synthesis-weight: none;
 }
+
+/* 컨테이너 XL — 전역 제공(중복 제거) */
+.aa-container-xl {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 0 1rem;
+}
+@media (min-width: 1280px){ .aa-container-xl { max-width: 1440px; } }
+@media (min-width: 1536px){ .aa-container-xl { max-width: 1600px; } }
 
 /* SweetAlert2 다크 */
 .swal2-popup{ background: var(--aa-panel) !important; color: var(--aa-text) !important; border:1px solid var(--aa-border); }
@@ -40,7 +59,7 @@ button, input, textarea, select{ background-color: #0b162f; color: var(--aa-text
 .aa-subtle{ color:var(--aa-muted); font-size:.9rem; }
 .aa-toolbar-right{ display:flex; gap:.5rem; align-items:center; flex-wrap:nowrap; }
 
-/* ✅ 다크 패널 - 네임스페이스 & 우선순위 강화 */
+/* 패널 */
 .admin-app .aa-panel,
 .aa-panel{
     border:1px solid var(--aa-border) !important;
@@ -53,7 +72,6 @@ button, input, textarea, select{ background-color: #0b162f; color: var(--aa-text
 .aa-panel.tight{ padding:.6rem; }
 
 /* 버튼 */
-.aa-row{ display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
 .aa-btn{
     display:inline-flex; align-items:center; gap:.35rem;
     padding:.46rem .72rem; border-radius:.55rem; border:1px solid #334155;
@@ -71,6 +89,12 @@ button, input, textarea, select{ background-color: #0b162f; color: var(--aa-text
 .aa-btn-ghost{ background:transparent; border-color:transparent; color:var(--aa-text); opacity:.9; }
 .aa-btn-sm{ padding:.36rem .56rem; font-size:.86rem; border-radius:.5rem; }
 .aa-btn-group{ display:inline-flex; align-items:center; gap:.35rem; flex-wrap:nowrap; white-space:nowrap; }
+/* 🔆 토글 on 상태 시 */
+.aa-btn.is-active{
+    background: var(--aa-accent-strong);
+    border-color: var(--aa-accent-strong);
+    color: #fff;
+}
 
 /* 입력/선택 */
 .aa-input,.aa-textarea,.aa-select{
@@ -85,16 +109,6 @@ button, input, textarea, select{ background-color: #0b162f; color: var(--aa-text
 .aa-label{ display:block; font-weight:600; margin-bottom:.28rem; }
 .aa-help{ color:var(--aa-muted); font-size:.84rem; }
 
-/* 그리드 */
-.aa-grid{ display:grid; gap:.75rem; grid-template-columns:1fr; }
-@media (min-width:1024px){
-    .aa-grid.cols-10{ grid-template-columns: repeat(10, minmax(0,1fr)); }
-    .col-span-3{ grid-column: span 3 / span 3; }
-    .col-span-4{ grid-column: span 4 / span 4; }
-    .col-span-6{ grid-column: span 6 / span 6; }
-    .col-span-7{ grid-column: span 7 / span 7; }
-}
-
 /* 폼 그리드 */
 .aa-form-grid-1{ display:grid; gap:.7rem; grid-template-columns:1fr; }
 .aa-form-grid-2{ display:grid; gap:.7rem; grid-template-columns:1fr; }
@@ -104,6 +118,16 @@ button, input, textarea, select{ background-color: #0b162f; color: var(--aa-text
     .aa-form-grid-3{ grid-template-columns:1fr 1fr 1fr; }
 }
 .aa-field label{ display:block; font-weight:600; margin-bottom:.28rem; }
+
+/* CSS Grid 유틸 */
+.aa-grid{ display:grid; gap:.75rem; grid-template-columns:1fr; }
+@media (min-width:1024px){
+    .aa-grid.cols-10{ grid-template-columns: repeat(10, minmax(0,1fr)); }
+    .col-span-3{ grid-column: span 3 / span 3; }
+    .col-span-4{ grid-column: span 4 / span 4; }
+    .col-span-6{ grid-column: span 6 / span 6; }
+    .col-span-7{ grid-column: span 7 / span 7; }
+}
 
 /* 테이블 */
 .aa-table-wrap{ width:100%; overflow:auto; }
@@ -137,7 +161,7 @@ button, input, textarea, select{ background-color: #0b162f; color: var(--aa-text
 .aa-sticky-lg{ position:static; }
 @media (min-width:1024px){ .aa-sticky-lg{ position:sticky; top:10px; } }
 
-/* Env control */
+/* 세그먼트 컨트롤 */
 .aa-seg{
     display:inline-flex; align-items:center; gap:2px;
     padding:2px; border:1px solid #334155; border-radius:999px; background:#0b162f;
@@ -147,10 +171,211 @@ button, input, textarea, select{ background-color: #0b162f; color: var(--aa-text
 }
 .aa-seg button.active{ background: var(--aa-accent-strong); color:#fff; }
 
-/* 코드/스니펫 */
+/* 코드 블럭 */
 .aa-code{
     white-space: pre-wrap; overflow: auto; max-height: 60vh;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     line-height: 1.4; padding: .75rem .9rem; background: var(--aa-panel);
     border: 1px solid var(--aa-border); border-radius: .6rem;
 }
+
+/* 오버레이/모달 호환성: 알럿/모달 열릴 때 툴바 클릭 비활성화 */
+body.modal-open .aa-toolbar,
+body.modal-open .aa-topbar{
+    pointer-events: none !important;
+    z-index: auto !important;
+}
+
+/* 유틸리티 */
+.w-28 { width: 7rem; }         /* Tailwind 28 = 7rem */
+button:disabled { opacity: .6; cursor: not-allowed; } /* 전역 disabled */
+
+/* 공용 cc-editor(오버레이 카드) — 페이지별 중복 제거 */
+.cc-editor {
+    position: fixed; inset: 0; background: rgba(2, 6, 23, .55);
+    display: flex; align-items: flex-start; justify-content: center;
+    padding-top: calc(var(--aa-header-h, 3.5rem) + 40px); z-index: 50;
+}
+.cc-editor-card {
+    width: min(680px, 92vw);
+    background: var(--aa-panel);
+    border: 1px solid var(--aa-border);
+    border-radius: 12px; padding: 16px; color: var(--aa-text);
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+
+/* ────────────────────────────────────────────────────────────
+   Admin Timetable — Grid/List 공통 스타일（공용화, 중복 제거）
+   ──────────────────────────────────────────────────────────── */
+
+:root{
+    --tt-wrap-max-h: 68vh;
+    --tt-day-col-min: 220px;
+    --tt-gutter: 1px;
+    --tt-header-h: 32px;
+    --tt-days: 7;
+    --tt-min-w: calc(80px + var(--tt-days) * (var(--tt-day-col-min) + var(--tt-gutter)));
+}
+@media (max-width: 1440px){ :root{ --tt-day-col-min: 180px; } }
+@media (max-width: 1280px){ :root{ --tt-day-col-min: 150px; } }
+@media (max-width: 1120px){ :root{ --tt-day-col-min: 120px; } }
+@media (max-width: 960px) { :root{ --tt-day-col-min: 100px; } }
+
+.admin-app .tt-headrow, .academy-page .tt-headrow{
+    display: flex; align-items: center; gap: .5rem; margin-bottom: .5rem;
+}
+.admin-app .tt-headrow .aa-seg, .academy-page .tt-headrow .aa-seg{ margin-left: auto; }
+
+.admin-app .tt-split, .academy-page .tt-split{
+    display: grid;
+    grid-template-columns: minmax(320px, 0.4fr) minmax(420px, 0.6fr);
+    gap: 1rem; align-items: start;
+}
+@media (max-width: 1024px){
+    .admin-app .tt-split, .academy-page .tt-split{ grid-template-columns: 1fr; }
+}
+
+.admin-app .tt-scroll, .academy-page .tt-scroll{
+    overflow: auto; max-height: var(--tt-wrap-max-h);
+    overscroll-behavior: contain; touch-action: pan-x pan-y; padding-bottom: 2px;
+}
+
+.admin-app .tt-days-header, .academy-page .tt-days-header{
+    position: sticky; top: 0; z-index: 8;
+    display: grid; gap: var(--tt-gutter);
+    grid-template-columns: 80px repeat(var(--tt-days), minmax(var(--tt-day-col-min), 1fr));
+    width: max(100%, var(--tt-min-w));
+    background: var(--aa-panel);
+    border: 1px solid var(--aa-border);
+    border-bottom: 0; border-radius: .6rem .6rem 0 0;
+}
+.admin-app .tt-timepad, .academy-page .tt-timepad{
+    position: sticky; left: 0; z-index: 9; background: var(--aa-panel);
+    border-right: 1px solid var(--aa-border); height: var(--tt-header-h);
+}
+.admin-app .tt-dayhead, .academy-page .tt-dayhead{
+    height: var(--tt-header-h); display: flex; align-items: center; justify-content: center;
+    background: var(--aa-panel); border-bottom: 1px solid var(--aa-border);
+}
+
+.admin-app .tt-grid, .academy-page .tt-grid{
+    display: grid; gap: var(--tt-gutter);
+    grid-template-columns: 80px repeat(var(--tt-days), minmax(var(--tt-day-col-min), 1fr));
+    width: max(100%, var(--tt-min-w)); background: var(--aa-border);
+    border: 1px solid var(--aa-border); border-top: 0; border-radius: 0 0 .6rem .6rem;
+    contain: layout paint; position: relative;
+}
+.admin-app .tt-timecol, .academy-page .tt-timecol,
+.admin-app .tt-daycol,  .academy-page .tt-daycol{
+    background: var(--aa-panel); position: relative; padding-top: 0;
+}
+.admin-app .tt-timecol, .academy-page .tt-timecol{
+    position: sticky; left: 0; z-index: 6; border-right: 1px solid var(--aa-border);
+}
+.admin-app .tt-hourline, .academy-page .tt-hourline{
+    position: absolute; left: 0; right: 0; height: 1px; background: var(--aa-border);
+    pointer-events: none;
+}
+.admin-app .tt-hourlabel, .academy-page .tt-hourlabel{
+    position: absolute; left: 8px; font-size: 12px; color: var(--aa-muted);
+    transform: translateY(-50%); pointer-events: none; font-variant-numeric: tabular-nums;
+}
+.admin-app .tt-hourlabel.is-first, .academy-page .tt-hourlabel.is-first{ transform: none; }
+
+.admin-app .tt-event, .academy-page .tt-event{
+    position: absolute; left: 6px; right: 6px;
+    background: color-mix(in srgb, var(--aa-accent) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--aa-accent) 55%, var(--aa-border));
+    border-radius: 8px; padding: 6px; overflow: hidden; box-sizing: border-box;
+    backdrop-filter: saturate(120%) brightness(105%);
+}
+.admin-app .tt-event:focus-visible, .academy-page .tt-event:focus-visible{
+    outline: 2px solid color-mix(in srgb, var(--aa-accent) 65%, white); outline-offset: 2px;
+}
+.admin-app .tt-event-title, .academy-page .tt-event-title{
+    font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.admin-app .tt-event-time, .academy-page .tt-event-time{
+    color: var(--aa-muted); font-size: 12px; margin-top: 2px;
+}
+.admin-app .tt-meta, .academy-page .tt-meta{
+    display: flex; align-items: center; gap: 1rem; margin-bottom: .5rem; flex-wrap: wrap;
+}
+.admin-app .tt-stat, .academy-page .tt-stat{ color: var(--aa-muted); font-size: .9rem; }
+.admin-app .tt-list, .academy-page .tt-list{ display: flex; flex-direction: column; gap: .6rem; }
+.admin-app .tt-daygroup, .academy-page .tt-daygroup{
+    background: var(--aa-panel); border: 1px solid var(--aa-border); border-radius: .6rem; overflow: hidden;
+}
+.admin-app .tt-daygroup-header, .academy-page .tt-daygroup-header{
+    display: flex; align-items: center; justify-content: space-between;
+    padding: .6rem .8rem; background: rgba(255,255,255,.03); border-bottom: 1px solid var(--aa-border);
+}
+.admin-app .tt-row, .academy-page .tt-row{
+    display: grid; grid-template-columns: 160px 1fr; gap: .8rem; align-items: center;
+    padding: .6rem .8rem; border-top: 1px dashed rgba(148,163,184,.25);
+}
+.admin-app .tt-row:first-child, .academy-page .tt-row:first-child{ border-top: 0; }
+@media (max-width: 640px){
+    .admin-app .tt-dayhead, .academy-page .tt-dayhead{ font-size: .9rem; }
+}
+@media (prefers-reduced-motion: reduce){
+    .admin-app .tt-event, .academy-page .tt-event{ transition: none; }
+}
+
+/* ────────────────────────────────────────────────────────────
+   TeacherPicker — 공용 스킨（중복 제거, 이 파일만 유지）
+   ──────────────────────────────────────────────────────────── */
+
+/* 모달 내용 루트 */
+.teacher-picker {
+    width: clamp(680px, 72vw, 1040px);
+    max-height: calc(100vh - 8rem);
+    display: grid; grid-template-rows: auto 1fr;
+}
+/* 본문 그리드: 좌 200px / 우 유동폭 */
+.teacher-picker .tp-grid {
+    display: grid; grid-template-columns: 200px minmax(360px, 1fr);
+    gap: 12px; align-items: start; min-width: 0;
+}
+/* 좌측: 관 목록 */
+.teacher-picker .tp-left {
+    min-width: 180px; max-height: calc(100vh - 14rem); overflow: auto;
+    background: var(--aa-panel); border: 1px solid var(--aa-border);
+    border-radius: .5rem; padding: .5rem;
+}
+/* 우측: 검색+강사 */
+.teacher-picker .tp-right {
+    min-width: 0; max-height: calc(100vh - 14rem); overflow: auto;
+    display: flex; flex-direction: column; gap: 10px;
+}
+.teacher-picker .tp-loc-list { display: flex; flex-direction: column; gap: 6px; }
+.teacher-picker .tp-loc-item{
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: .5rem .6rem; border-radius: .5rem; cursor: pointer;
+}
+.teacher-picker .tp-loc-item:hover{ background: rgba(148,163,184,.10); }
+.teacher-picker .tp-loc-item.active{
+    background: rgba(99,102,241,.12); outline: 2px solid var(--aa-accent, #6366f1); outline-offset: 0;
+}
+.teacher-picker .tp-actions{ display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.teacher-picker .tp-teacher-list{ display: flex; flex-direction: column; gap: 8px; }
+.teacher-picker .tp-teacher-item{
+    display: block; padding: .55rem .7rem; border-radius: .5rem;
+    background: var(--aa-panel); border: 1px solid var(--aa-border); white-space: normal;
+}
+.teacher-picker .tp-row{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.teacher-picker .tp-name { flex: 1 1 auto; min-width: 0; }
+@media (max-width: 720px){
+    .teacher-picker { width: 96vw; }
+    .teacher-picker .tp-grid { grid-template-columns: 1fr; }
+    .teacher-picker .tp-left{
+        position: sticky; top: 0; z-index: 1; max-height: none; overflow: visible;
+        border: 0; padding: 0; background: transparent;
+    }
+    .teacher-picker .tp-loc-list { flex-direction: row; flex-wrap: wrap; gap: 6px; margin-bottom: .25rem; }
+    .teacher-picker .tp-loc-item { border: 1px solid var(--aa-border); }
+}
+/* 목록/칩 보정 */
+.teacher-picker .picker-list,
+.teacher-picker .picker-item { display: block; white-space: normal; }
+.teacher-picker .picker-list .picker-item { margin: 0; }

@@ -1,186 +1,93 @@
-/* src/styles/admin.css */
+/* src/styles/admin.css
+   ---------------------------------------------------------------------------
+   라이트 톤/유틸. 다크 베이스(admin-system.css)와 겹치지 않도록 전부
+   .aa-page-light 네임스페이스 아래로 스코프.
+   → 라이트 화면에서만 적용하려면 페이지 루트에 .aa-page-light 추가.
+   예) <section class="aa-page-light">...</section>
+   --------------------------------------------------------------------------- */
 
-/* -------------------------------------------------------------
-   공통 톤(다크) — 기존 스타일 유지
-   ------------------------------------------------------------- */
+:root { --aa-header-h: 3.5rem; } /* 헤더 높이 */
 
-/* 헤더 높이 기준치(3.5rem = h-14) */
-:root { --aa-header-h: 3.5rem; }
-
-/* 페이지 배경(다크) */
-.aa-page-dark {
+/* 라이트 페이지 배경/텍스트 */
+.aa-page-light {
     min-height: calc(100vh - var(--aa-header-h));
-    background-color: rgb(2 6 23);       /* slate-950 */
-    color: rgb(241 245 249);             /* slate-100 */
+    background-color: #f8fafc; /* slate-50 근처 */
+    color: #0f172a;            /* slate-900 근처 */
 }
 
-/* 다크 패널 (이건 그대로 두되, 이름 충돌 없음) */
-.aa-panel-dark {
-    border: 1px solid rgb(30 41 59);     /* slate-800 */
-    border-radius: 0.75rem;
-    background-color: rgb(15 23 42);     /* slate-900 */
-    color: rgb(241 245 249);             /* slate-100 */
-}
-
-/* ✅ 라이트 패널: 기존 .aa-panel → .aa-panel-light 로 변경 (충돌 제거) */
-.aa-panel-light {
-    border: 1px solid rgb(226 232 240);  /* slate-200 */
+/* 라이트 패널 */
+.aa-page-light .aa-panel-light,
+.aa-page-light .aa-panel--light {
+    border: 1px solid rgb(226 232 240);
     border-radius: 0.75rem;
     background-color: #fff;
     color: rgb(30 41 59);
 }
+.aa-page-light .aa-panel--card { padding: 1rem; border-radius: 0.75rem; }
 
-/* 버튼/뱃지 (다크 톤) */
-.aa-btn {
+/* 공용 버튼 (라이트 스코프) */
+.aa-page-light .aa-btn {
     padding: 0.5rem 0.9rem;
     border-radius: 0.5rem;
-    border: 1px solid rgb(51 65 85);     /* slate-700 */
-    background-color: rgb(30 41 59);     /* slate-800 */
-    color: rgb(241 245 249);             /* slate-100 */
-    transition: background-color .15s, border-color .15s, box-shadow .15s;
-    white-space: nowrap;
-    line-height: 1.25rem;
-    font-size: 0.925rem;
-}
-.aa-btn:hover { background-color: rgb(51 65 85); } /* slate-700 */
-
-.aa-btn-primary {
-    border-color: rgb(55 48 163);        /* indigo-700 */
-    background-color: rgb(79 70 229);    /* indigo-600 */
-    color: #fff;
-}
-.aa-btn-primary:hover { background-color: rgb(67 56 202); } /* indigo-700 */
-
-.aa-btn-danger {
-    border-color: rgb(190 18 60);        /* rose-700 */
-    background-color: rgb(225 29 72);    /* rose-600 */
-    color: #fff;
-}
-.aa-btn-danger:hover { background-color: rgb(190 18 60); } /* rose-700 */
-
-.aa-badge {
-    font-size: 10px;
-    padding: 0.125rem 0.375rem;
-    border-radius: 0.375rem;
-    background-color: rgb(51 65 85);     /* slate-700 */
+    border: 1px solid rgb(51 65 85);
+    background-color: rgb(30 41 59);
     color: rgb(241 245 249);
-    vertical-align: middle;
+    transition: background-color .15s, border-color .15s, box-shadow .15s;
+    white-space: nowrap; line-height: 1.25rem; font-size: 0.925rem;
 }
+.aa-page-light .aa-btn:hover { background-color: rgb(51 65 85); }
+.aa-page-light .aa-btn-primary { border-color: rgb(55 48 163); background-color: rgb(79 70 229); color:#fff; }
+.aa-page-light .aa-btn-primary:hover { background-color: rgb(67 56 202); }
+.aa-page-light .aa-btn-danger { border-color: rgb(190 18 60); background-color: rgb(225 29 72); color:#fff; }
+.aa-page-light .aa-btn-danger:hover { background-color: rgb(190 18 60); }
+.aa-page-light .aa-badge { font-size:10px; padding:.125rem .375rem; border-radius:.375rem; background:rgb(51 65 85); color:#f1f5f9; }
 
-/* -------------------------------------------------------------
-   반응형 레이아웃
-   ------------------------------------------------------------- */
+/* 레이아웃 유틸 (라이트 스코프) */
+.aa-page-light .aa-split { display: grid; gap: 1.5rem; }
+.aa-page-light .aa-left-3,
+.aa-page-light .aa-right-7,
+.aa-page-light .aa-left-4,
+.aa-page-light .aa-right-6 { grid-column: 1 / -1; }
 
-.aa-split {
-    display: grid;
-    gap: 1.5rem;
+@media (min-width: 768px) {
+    .aa-page-light .aa-split.aa-split-3-7,
+    .aa-page-light .aa-split.aa-split-4-6 { grid-template-columns: repeat(10, minmax(0, 1fr)); }
+    .aa-page-light .aa-left-3  { grid-column: span 3 / span 3; }
+    .aa-page-light .aa-right-7 { grid-column: span 7 / span 7; }
+    .aa-page-light .aa-left-4  { grid-column: span 4 / span 4; }
+    .aa-page-light .aa-right-6 { grid-column: span 6 / span 6; }
 }
-.aa-left-3, .aa-right-7,
-.aa-left-4, .aa-right-6 { grid-column: 1 / -1; }
+@media (min-width: 1024px) { .aa-page-light .aa-split { gap: 2rem; } }
 
-@media (min-width: 1024px) {
-    .aa-split-3-7,
-    .aa-split-4-6 { grid-template-columns: repeat(10, minmax(0, 1fr)); }
+.aa-page-light .aa-sticky-lg { position: static; }
+@media (min-width: 768px){ .aa-page-light .aa-sticky-lg { position: sticky; top: calc(var(--aa-header-h) + 1rem); } }
 
-    .aa-left-3  { grid-column: span 3 / span 3; }
-    .aa-right-7 { grid-column: span 7 / span 7; }
-    .aa-left-4  { grid-column: span 4 / span 4; }
-    .aa-right-6 { grid-column: span 6 / span 6; }
-
-    .aa-split { gap: 2rem; }
-}
-
-.aa-container-xl {
-    max-width: 1280px;
-    margin-left: auto;
-    margin-right: auto;
-    padding-left: 1rem;
-    padding-right: 1rem;
-}
-@media (min-width: 1280px) {
-    .aa-container-xl { max-width: 1440px; }
-}
-@media (min-width: 1536px) {
-    .aa-container-xl { max-width: 1600px; }
-}
-
-.aa-sticky-lg { position: static; }
-@media (min-width: 1024px) {
-    .aa-sticky-lg { position: sticky; top: calc(var(--aa-header-h) + 1rem); }
-}
-
-.aa-panel-scroll {
+/* 스크롤 보조 */
+.aa-page-light .aa-panel-scroll {
     max-height: calc(100dvh - var(--aa-header-h) - 1.5rem);
-    overflow: auto;
-    scrollbar-gutter: stable both-edges;
+    overflow: auto; scrollbar-gutter: stable both-edges;
 }
 
-/* -------------------------------------------------------------
-   툴바
-   ------------------------------------------------------------- */
+/* 툴바/폼 유틸 */
+.aa-page-light .aa-toolbar { display:flex; gap:.75rem; align-items:center; flex-wrap:wrap; }
+.aa-page-light .aa-toolbar .aa-toolbar-right { margin-left:auto; display:flex; gap:.5rem; flex-wrap:wrap; }
 
-.aa-toolbar {
-    display: flex;
-    gap: 0.75rem;
-    align-items: center;
-    flex-wrap: wrap;
+.aa-page-light .aa-field label { display:block; font-size:.9rem; font-weight:600; color:rgb(71 85 105); margin-bottom:.35rem; }
+.aa-page-light .aa-field .aa-input,
+.aa-page-light .aa-field .aa-select {
+    width:100%; background:#fff; color:#0f172a; border:1px solid rgb(203 213 225);
+    border-radius:.5rem; padding:.6rem .8rem; outline:none;
 }
-.aa-toolbar .aa-toolbar-right {
-    margin-left: auto;
-    display: flex; gap: 0.5rem; flex-wrap: wrap;
-}
-
-/* -------------------------------------------------------------
-   폼 가독성 보강
-   ------------------------------------------------------------- */
-
-.aa-field label {
-    display: block;
-    font-size: .9rem;
-    font-weight: 600;
-    color: rgb(203 213 225);               /* slate-300 */
-    margin-bottom: .35rem;
-}
-.aa-field .aa-input,
-.aa-field .aa-select {
-    width: 100%;
-    background: rgb(30 41 59);             /* slate-800 */
-    color: #fff;
-    border: 1px solid rgb(71 85 105);      /* slate-600/700 */
-    border-radius: .5rem;
-    padding: .6rem .8rem;
-    outline: none;
-}
-.aa-field .aa-input:focus,
-.aa-field .aa-select:focus {
-    border-color: rgb(99 102 241);         /* indigo-500 */
-    box-shadow: 0 0 0 3px rgba(99,102,241,.18);
+.aa-page-light .aa-field .aa-input:focus,
+.aa-page-light .aa-field .aa-select:focus {
+    border-color: rgb(99 102 241); box-shadow:0 0 0 3px rgba(99,102,241,.18);
 }
 
-/* 모바일 보정 */
-@media (max-width: 639px) {
-    .aa-btn { padding: 0.45rem 0.75rem; }
-}
+.aa-page-light .aa-input { background:#fff; color:#0f172a; border:1px solid #cbd5e1; border-radius:.5rem; padding:.5rem .75rem; outline:none; }
+.aa-page-light .aa-input:focus { box-shadow:0 0 0 2px rgba(99,102,241,.35); border-color:#6366f1; }
+.aa-page-light .aa-input::placeholder { color:#94a3b8; }
+.aa-page-light .aa-select { background:#fff; color:#0f172a; }
+.aa-page-light .aa-select option { color:#0f172a; background:#fff; }
 
-/* select/option */
-.aa-input {
-    background-color: #0f172a; color: #e2e8f0;
-    border: 1px solid #334155; border-radius: 0.5rem;
-    padding: 0.5rem 0.75rem; outline: none;
-}
-.aa-input:focus {
-    box-shadow: 0 0 0 2px rgba(99,102,241,.35);
-    border-color: #6366f1;
-}
-.aa-input::placeholder { color: #94a3b8; }
-
-.aa-select { background-color: #0f172a; color: #e2e8f0; }
-.aa-select option {
-    color: #0f172a;           /* 드롭다운 글자 */
-    background: #ffffff;      /* 드롭다운 배경(흰색 유지: 가독성 목적) */
-}
-
-/* 대비 높은 인풋 */
-.aa-input-contrast {
-    background-color: #111827; color: #f9fafb; border-color: #4b5563;
-}
+.aa-page-light .aa-input-contrast { background:#f3f4f6; color:#111827; border-color:#e5e7eb; }
+@media (max-width: 639px){ .aa-page-light .aa-btn{ padding:.45rem .75rem; } }

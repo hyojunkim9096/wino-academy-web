@@ -1,23 +1,76 @@
 // src/api/authApi.js
+// ============================================================================
+// 인증/세션 API 모듈
+// ----------------------------------------------------------------------------
+// 이 모듈은 다음 책임을 가진다.
+// 1) 로그인: JWT를 'Bearer ' 접두사가 1번만 붙은 형태로 정규화해 저장하고,
+//    axios 기본 헤더(Authorization)에 즉시 반영한다.
+// 2) 로그인 직후 /auth/me 로 현재 관리자 정보를 읽어와 localStorage.currentAdminId 에 저장한다.
+//    → 모든 API 요청 인터셉터에서 'X-App-User-Id' 헤더로 자동 첨부(이벤트 이력 event_by 용).
+// 3) 공개(비인증) API인 비밀번호 재설정 요청/확정은 전역 인증 팝업을 비활성화한다.
+// 4) ping/me/logout 등 기본 인증 관련 호출을 한 곳에서 관리한다.
+// ============================================================================
+
 import api from './client';
 
-/**
- * 로그인
- * - 서버가 'Bearer <jwt>' 또는 '<jwt>' 둘 다 가능 → 항상 'Bearer ' 접두로 정규화
- * - 받은 토큰을 저장하고, axios 기본 헤더에 즉시 반영
- * - (선택) 로그인 직후 3초 그레이스 윈도우 기록 → ping/me 401/423 일시무시
- */
+// ---------------------------------------------------------------------------
+// 내부 유틸: 'Bearer ' 접두사 정규화
+// - 서버가 'Bearer <jwt>' 또는 '<jwt>' 둘 다 반환할 수 있으므로 일관화 필요
+// ---------------------------------------------------------------------------
+function normalizeBearer(raw) {
+    if (!raw || typeof raw !== 'string') return '';
+    return raw.startsWith('Bearer ') ? raw : `Bearer ${raw}`;
+}
+
+// ---------------------------------------------------------------------------
+// 토큰/헤더 적용 & 정리 헬퍼 (필요 시 외부에서 재사용할 수 있게 export)
+// ---------------------------------------------------------------------------
+export function setAuthToken(headerToken) {
+    // 토큰 저장 + axios 전역 헤더 반영
+    try { localStorage.setItem('accessToken', headerToken || ''); } catch {}
+    if (headerToken) {
+        api.defaults.headers.common.Authorization = headerToken;
+    } else {
+        try { delete api.defaults.headers.common.Authorization; } catch {}
+    }
+}
+
+export function clearAuthState() {
+    // 토큰/현재관리자ID 제거 + 헤더 정리
+    try { localStorage.removeItem('accessToken'); } catch {}
+    try { localStorage.removeItem('currentAdminId'); } catch {}
+    try { delete api.defaults.headers.common.Authorization; } catch {}
+    try { delete api.defaults.headers.common['X-App-User-Id']; } catch {}
+}
+
+// ---------------------------------------------------------------------------
+// 현재 관리자 ID 보관(X-App-User-Id 연동)
+// - 서버 히스토리 트리거 event_by에 admin_user_info.id를 넣기 위해,
+//   모든 요청 인터셉터에서 localStorage.currentAdminId를 읽어 헤더로 싣는다.
+// ---------------------------------------------------------------------------
+export function saveCurrentAdminId(id) {
+    if (id == null) return;
+    const val = String(id);
+    try { localStorage.setItem('currentAdminId', val); } catch {}
+    api.defaults.headers.common['X-App-User-Id'] = val;
+}
+
+// ---------------------------------------------------------------------------
+// 로그인
+// - 서버가 'Bearer <jwt>' 또는 '<jwt>' 둘 다 가능 → 항상 'Bearer ' 접두로 정규화
+// - 받은 토큰을 저장하고, axios 기본 헤더에 즉시 반영
+// - (선택) 로그인 직후 3초 그레이스 윈도우 기록 → ping/me 401/423 일시무시
+// ---------------------------------------------------------------------------
 export const login = async ({ userId, password }) => {
     const res = await api.post('/auth/login', { userId, password });
     const raw = typeof res.data === 'string' ? res.data : res.data?.token;
     if (!raw) throw new Error('토큰 응답이 없습니다.');
 
     // ✅ 핵심: 토큰을 항상 'Bearer ' 1번만 붙인 형태로 정규화
-    const headerToken = raw.startsWith('Bearer ') ? raw : `Bearer ${raw}`;
+    const headerToken = normalizeBearer(raw);
 
     // 저장 및 전역 헤더 적용
-    localStorage.setItem('accessToken', headerToken);
-    api.defaults.headers.common.Authorization = headerToken;
+    setAuthToken(headerToken);
 
     // 로그인 직후 잠깐 발생할 수 있는 ping/me 401/423 무시용 (선택)
     try { sessionStorage.setItem('auth:graceUntil', String(Date.now() + 3000)); } catch {}
@@ -25,20 +78,63 @@ export const login = async ({ userId, password }) => {
     return headerToken;
 };
 
-/** 내 정보 조회 */
-export const fetchMe = async () => (await api.get('/auth/me')).data;
-
-/** 세션 연장(ping) */
-export const ping   = async () => (await api.post('/auth/ping')).data;
-
-/** 로그아웃(서버 세션 종료) — 전역 팝업 억제 */
-export const logout = async () => {
-    try { await api.post('/auth/logout', null, { skipAuthErrorPopup: true }); } catch {}
+// ---------------------------------------------------------------------------
+// 로그인 직후 세션 초기화
+// - /auth/me 로부터 id를 받아 currentAdminId 저장(X-App-User-Id 자동 첨부)
+// - 호출부: 로그인 성공 직후(AdminLoginPage 등)
+// ---------------------------------------------------------------------------
+export const initSessionAfterLogin = async () => {
+    const me = await fetchMe();              // { id, userId, userName, remainingSeconds, ... }
+    if (me?.id != null) saveCurrentAdminId(me.id);
+    return me;
 };
 
-// 공개 API — 전역 인증 팝업 비활성화
+// ---------------------------------------------------------------------------
+// 내 정보 조회 (/auth/me)
+// - 남은 세션 시간(remainingSeconds) 등도 함께 수신할 수 있음
+// ---------------------------------------------------------------------------
+export const fetchMe = async () => (await api.get('/auth/me')).data;
+
+// ---------------------------------------------------------------------------
+// 세션 연장(ping)
+// ---------------------------------------------------------------------------
+export const ping = async () => (await api.post('/auth/ping')).data;
+
+// ---------------------------------------------------------------------------
+// 로그아웃(서버 세션 종료)
+// - 전역 인증 팝업 억제(skipAuthErrorPopup)
+//   (로그아웃 시도 도중 401/403이 나도 화면이 크게 흔들리지 않게 하기 위함)
+// ---------------------------------------------------------------------------
+export const logout = async () => {
+    try {
+        await api.post('/auth/logout', null, { skipAuthErrorPopup: true });
+    } catch {
+        // 서버 세션이 이미 끊긴 상태여도 무시
+    }
+};
+
+// ---------------------------------------------------------------------------
+// 공개 API: 비밀번호 재설정 요청/확정
+// - 공개 엔드포인트이므로 전역 인증 오류 팝업을 끈다(skipAuthErrorPopup: true).
+// - ForgotPasswordPage / ResetPasswordPage 에서 import 해서 사용.
+// ---------------------------------------------------------------------------
 export const requestPasswordReset = async (userId) =>
-    api.post('/auth/password-reset/request', { userId }, { skipAuthErrorPopup: true });
+    (await api.post('/auth/password-reset/request', { userId }, { skipAuthErrorPopup: true })).data;
 
 export const confirmPasswordReset = async ({ userId, code, newPassword }) =>
-    api.post('/auth/password-reset/confirm', { userId, code, newPassword }, { skipAuthErrorPopup: true });
+    (await api.post('/auth/password-reset/confirm', { userId, code, newPassword }, { skipAuthErrorPopup: true })).data;
+
+// ---------------------------------------------------------------------------
+// 모듈 로드 시: 저장된 토큰/관리자ID를 axios 전역 헤더에 복원(페이지 새로고침 대응)
+// ---------------------------------------------------------------------------
+(() => {
+    try {
+        const saved = localStorage.getItem('accessToken');
+        if (saved) setAuthToken(normalizeBearer(saved));
+    } catch {}
+
+    try {
+        const uid = localStorage.getItem('currentAdminId');
+        if (uid) api.defaults.headers.common['X-App-User-Id'] = String(uid);
+    } catch {}
+})();

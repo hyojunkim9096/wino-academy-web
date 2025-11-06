@@ -1,4 +1,7 @@
+// src/main/react/AdminSignUpPage.jsx
 // 전체 교체 (성공/검증 팝업 + 이중저장 방지/쿨다운 적용)
+// - ✅ AddressSearch 개선 대응: children 대신 buttonLabel 사용(라벨 일관: "우편번호 검색")
+
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import AuthLayout from '@/components/layouts/AuthLayout';
@@ -39,6 +42,8 @@ function AdminSignUpPage() {
     }, [cooldown]);
 
     const onChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
+
+    // ✅ AddressSearch 개선 대응: postalCode/address만 받아 사용 (admCd/x/y는 무시)
     const onAddressComplete = ({ postalCode, address }) =>
         setForm((p) => ({ ...p, postalCode, address }));
 
@@ -71,7 +76,6 @@ function AdminSignUpPage() {
         } catch (err) {
             // api 모듈에서 표준화한 코드 처리
             if (err?.code === 'COOLDOWN_ACTIVE') {
-                // 남은 초로 버튼 카운트다운 시작
                 const seconds = Number(err.remainingSeconds) || 5;
                 setCooldown(seconds);
                 if (!timerRef.current) {
@@ -112,6 +116,7 @@ function AdminSignUpPage() {
                             className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-4 py-2
                          focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
                             disabled={submitting || cooldown > 0}
+                            autoComplete="username"
                         />
                     </div>
                     <div>
@@ -226,10 +231,12 @@ function AdminSignUpPage() {
                             placeholder="우편번호"
                             className="flex-1 rounded-lg border border-gray-300 bg-gray-50 px-4 py-2"
                         />
+                        {/* ✅ AddressSearch: children 대신 buttonLabel 사용 */}
                         <AddressSearch
                             onComplete={onAddressComplete}
                             className="rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white
                          hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-200"
+                            buttonLabel="우편번호 검색"
                             disabled={submitting || cooldown > 0}
                         />
                     </div>

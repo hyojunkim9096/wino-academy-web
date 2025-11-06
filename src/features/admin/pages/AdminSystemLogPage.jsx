@@ -13,12 +13,15 @@ import React, { useEffect, useMemo, useState } from 'react';
 import api from '@/api/client';        // ✅ 프로젝트 공용 axios 인스턴스
 import '@/styles/admin-system.css';
 
+// ★ 공용 알림 모듈(SweetAlert2 래퍼) 사용
+import { alertInfo, alertError } from '@/ui/alert';
+
 // ───────────────────────── 유틸 ─────────────────────────
 
 /** ISO-8601 "YYYY-MM-DDTHH:mm:ss" → "YYYY-MM-DD HH:mm:ss" */
 function formatDateTime(s) {
     if (!s) return '';
-    // 백엔드에서 LocalDateTime 직렬화: "2025-08-21T10:11:12" 형태
+    // 백엔드(LocalDateTime 직렬화) 예시: "2025-08-21T10:11:12"
     // 표시는 초 단위까지만
     return String(s).replace('T',' ').slice(0,19);
 }
@@ -49,9 +52,15 @@ function downloadText(filename, text, mime = 'text/csv;charset=utf-8;') {
     const blob = new Blob([text], { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = filename; a.style.display = 'none';
-    document.body.appendChild(a); a.click();
-    setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a); }, 0);
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+        URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+    }, 0);
 }
 
 // ───────────────────────── 컴포넌트 ─────────────────────────
@@ -79,8 +88,9 @@ export default function AdminSystemLogPage() {
             setItems(Array.isArray(data) ? data : []);
             setPage(1); // 새 데이터 수신시 첫 페이지로 이동(UX)
         } catch (e) {
-            const msg = e?.response?.data?.message || e.message;
-            alert(`시스템 로그 조회 실패: ${msg}`);
+            const msg = e?.response?.data?.message || e.message || '알 수 없는 오류';
+            // ❌ window.alert → ✅ SweetAlert2 래퍼
+            await alertError('조회 실패', `시스템 로그 조회 실패:\n${msg}`);
         } finally {
             setLoading(false);
         }
@@ -126,9 +136,10 @@ export default function AdminSystemLogPage() {
     const pageRows = filtered.slice(start, end);
 
     // CSV 내보내기
-    const exportCsv = () => {
+    const exportCsv = async () => {
         if (!filtered.length) {
-            alert('내보낼 로그가 없습니다.');
+            // ❌ window.alert → ✅ SweetAlert2 래퍼
+            await alertInfo('안내', '내보낼 로그가 없습니다.');
             return;
         }
         const headers = [
@@ -158,7 +169,7 @@ export default function AdminSystemLogPage() {
         setPage(1);
     };
 
-    // 메서드 뱃지용(선택) — 프로젝트 CSS에 aa-badge만 있어도 동작. 색 분리 원하면 클래스 확장.
+    // 메서드 뱃지(선택) — 프로젝트 CSS에 aa-badge만 있어도 동작. 색 분리 원하면 클래스 확장.
     const renderMethodBadge = (m) => (
         <span className="aa-badge aa-badge--muted">{m}</span>
     );

@@ -1,0 +1,8 @@
+/* src/styles/admin-enroll.css
+   ------------------------------------------------------------------
+   반 배정 관리 보조 스킨
+   - 페이지 네임스페이스: .enroll-page
+   ------------------------------------------------------------------ */
+
+.enroll-page .aa-actions .aa-btn{ white-space: nowrap; }
+.enroll-page .aa-table .aa-ellipsis{ max-width: 420px; }

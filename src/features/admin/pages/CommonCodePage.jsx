@@ -1,25 +1,28 @@
 // src/features/admin/pages/CommonCodeManagePage.jsx
 // -----------------------------------------------------------------------------
 // 공통코드 관리
-// - 왼쪽: 그룹(1뎁스) 목록
-// - 오른쪽: 선택 그룹의 코드 목록(표) + 등록/수정/삭제
-// - IME(한글) 안전: 입력은 로컬 상태만 변경 (폼이 리마운트되거나 key가 바뀌지 않도록 설계)
+// - 왼쪽: 그룹(1뎁스) 목록 (+ 등록/수정/삭제)
+// - 오른쪽: 선택 그룹의 코드 목록(표) (+ 등록/수정/삭제)
+// - IME(한글) 안전: 입력은 로컬 상태만 변경 (폼 리마운트 방지)
+// - 🔆 UI 보강: 그룹/권한 영역에 .cc-box 프레임(테두리) 추가
+// - 🔆 confirm: window.confirm → SweetAlert2 confirmDialog 로 교체
 // -----------------------------------------------------------------------------
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { alertError, alertSuccess, alertInfo } from '@/ui/alert';
+import { alertError, alertSuccess, alertInfo, confirmDialog } from '@/ui/alert'; // ★ confirmDialog 추가
 import {
     listGroups, createGroup, updateGroup, deleteGroup,
     getCodes, createCode, updateCode, deleteCode,
-    // getCommonCodes // (호환용 alias, 현재는 getCodes 사용)
 } from '@/api/commonCodeAdminApi';
 import '@/styles/admin.css';
 import '@/styles/admin-codes.css';
+import '@/styles/admin-system.css'; // 베이스/토큰(다크) - 항상 마지막
 
 const safeInfo = (t, m) => Promise.resolve(alertInfo(t, m)).catch(() => {});
 const safeSuccess = (t, m) => Promise.resolve(alertSuccess(t, m)).catch(() => {});
 const safeError = (t, m) => Promise.resolve(alertError(t, m)).catch(() => {});
 
 export default function CommonCodeManagePage() {
+    /* ── 상태 ─────────────────────────────────────────────── */
     // 왼쪽 그룹
     const [groups, setGroups] = useState([]);
     const [selectedGroup, setSelectedGroup] = useState(null);
@@ -28,18 +31,19 @@ export default function CommonCodeManagePage() {
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(false);
 
-    // 에디터(오른쪽 카드) — groupEditor / codeEditor 둘 다 여기서 관리
-    const [groupEditor, setGroupEditor] = useState(null);
+    // 에디터(오버레이) — groupEditor / codeEditor
     // groupEditor = { mode:'create'|'edit', originalGroupCode?:string, draft:{groupCode,name,description,sortOrder,enabled} }
-    const [codeEditor, setCodeEditor] = useState(null);
+    const [groupEditor, setGroupEditor] = useState(null);
     // codeEditor = { mode:'create'|'edit', originalCode?:string, draft:{code,name,sortOrder,enabled,metaJson} }
+    const [codeEditor, setCodeEditor] = useState(null);
 
-    // 초기 부팅: 그룹 목록 로딩
+    /* ── 초기 부팅: 그룹 목록 로딩 ─────────────────────────── */
     useEffect(() => {
         (async () => {
             try {
                 const list = await listGroups();
                 setGroups(list || []);
+                // 선택 유지 or 첫 번째 자동 선택
                 setSelectedGroup((prev) => {
                     if (prev && list?.some(g => g.groupCode === prev.groupCode)) return prev;
                     return list?.[0] || null;
@@ -50,7 +54,7 @@ export default function CommonCodeManagePage() {
         })();
     }, []);
 
-    // 그룹 선택 변경 → 코드 목록 로딩
+    /* ── 그룹 선택 변경 → 코드 목록 로딩 ──────────────────── */
     useEffect(() => {
         (async () => {
             if (!selectedGroup) { setItems([]); return; }
@@ -67,7 +71,7 @@ export default function CommonCodeManagePage() {
         })();
     }, [selectedGroup?.groupCode]);
 
-    // 헤더
+    /* ── 헤더 ──────────────────────────────────────────────── */
     const Header = useMemo(() => (
         <div className="mb-5 aa-container-xxl">
             <h1 className="text-xl font-semibold text-white">공통코드 관리</h1>
@@ -75,7 +79,7 @@ export default function CommonCodeManagePage() {
         </div>
     ), []);
 
-    // ===== 그룹 핸들러 =====
+    /* ===== 그룹 핸들러 ===== */
     const openCreateGroup = () => {
         setGroupEditor({
             mode: 'create',
@@ -87,7 +91,7 @@ export default function CommonCodeManagePage() {
             mode: 'edit',
             originalGroupCode: g.groupCode,
             draft: {
-                groupCode: g.groupCode, // 편집에서는 groupCode 변경 불가로 잠그는 편을 권장
+                groupCode: g.groupCode,     // 편집에서는 groupCode 바꾸지 않는 것을 권장(잠금)
                 name: g.name || '',
                 description: g.description || '',
                 sortOrder: Number.isFinite(g.sortOrder) ? g.sortOrder : 0,
@@ -133,7 +137,14 @@ export default function CommonCodeManagePage() {
         }
     };
     const removeGroup = async (g) => {
-        if (!window.confirm(`그룹 '${g.name}'를 삭제할까요? (소속 코드가 있으면 함께 삭제됩니다)`)) return;
+        // 🔆 SweetAlert2 confirm 모달
+        const ok = await confirmDialog(
+            '그룹 삭제 확인',
+            `그룹 '${g.name}'를 삭제할까요?\n소속 코드가 있으면 함께 삭제됩니다.`,
+            { confirmText: '삭제', cancelText: '취소', confirmColor: '#ef4444' }
+        );
+        if (!ok) return;
+
         try {
             await deleteGroup(g.groupCode);
             await safeSuccess('성공', '그룹이 삭제되었습니다.');
@@ -148,7 +159,7 @@ export default function CommonCodeManagePage() {
         }
     };
 
-    // ===== 코드 핸들러 =====
+    /* ===== 코드 핸들러 ===== */
     const openCreateCode = () => {
         if (!selectedGroup) return;
         setCodeEditor({
@@ -207,7 +218,14 @@ export default function CommonCodeManagePage() {
     };
     const removeCode = async (row) => {
         if (!selectedGroup) return;
-        if (!window.confirm(`'${row.name}' 코드를 삭제할까요?`)) return;
+        // 🔆 SweetAlert2 confirm 모달
+        const ok = await confirmDialog(
+            '코드 삭제 확인',
+            `'${row.name}' 코드를 삭제할까요?`,
+            { confirmText: '삭제', cancelText: '취소', confirmColor: '#ef4444' }
+        );
+        if (!ok) return;
+
         try {
             await deleteCode(selectedGroup.groupCode, row.code);
             await safeSuccess('성공', '코드가 삭제되었습니다.');
@@ -218,6 +236,7 @@ export default function CommonCodeManagePage() {
         }
     };
 
+    /* ── 렌더 ──────────────────────────────────────────────── */
     return (
         <section className="aa-page-dark p-6">
             {Header}
@@ -225,96 +244,104 @@ export default function CommonCodeManagePage() {
                 <div className="aa-panel-dark p-5 shadow-sm">
                     {/* 3:7 레이아웃 */}
                     <div className="aa-split aa-split-3-7">
-                        {/* 왼쪽: 그룹 */}
+                        {/* ── 왼쪽: 그룹 ───────────────────────────── */}
                         <div className="aa-left-3">
                             <div className="aa-sticky-lg aa-panel-scroll">
                                 <div className="aa-panel-dark p-3">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <div className="font-semibold text-slate-100">그룹</div>
-                                        <div className="flex gap-2">
-                                            <button className="aa-btn aa-btn-primary" onClick={openCreateGroup}>그룹 등록</button>
-                                            {selectedGroup && (
-                                                <>
-                                                    <button className="aa-btn" onClick={() => openEditGroup(selectedGroup)}>그룹 수정</button>
-                                                    <button className="aa-btn aa-btn-danger" onClick={() => removeGroup(selectedGroup)}>그룹 삭제</button>
-                                                </>
-                                            )}
+                                    {/* 🔆 그룹 박스(프레임) */}
+                                    <div className="cc-box">
+                                        <div className="cc-box-head">
+                                            <div className="font-semibold text-slate-100">그룹</div>
+                                            <div className="flex gap-2">
+                                                <button className="aa-btn aa-btn-primary" onClick={openCreateGroup}>그룹 등록</button>
+                                                {selectedGroup && (
+                                                    <>
+                                                        <button className="aa-btn" onClick={() => openEditGroup(selectedGroup)}>그룹 수정</button>
+                                                        <button className="aa-btn aa-btn-danger" onClick={() => removeGroup(selectedGroup)}>그룹 삭제</button>
+                                                    </>
+                                                )}
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div className="cc-list">
-                                        {groups.length === 0 ? (
-                                            <div className="text-slate-400 text-sm">등록된 그룹이 없습니다.</div>
-                                        ) : groups.map((g) => (
-                                            <button
-                                                key={g.groupCode}
-                                                className={`cc-item ${selectedGroup?.groupCode === g.groupCode ? 'is-active' : ''}`}
-                                                onClick={() => { setSelectedGroup(g); setCodeEditor(null); }}
-                                                title={g.description || g.groupCode}
-                                            >
-                                                <span className="cc-badge">{Number.isFinite(g.sortOrder) ? g.sortOrder : '-'}</span>
-                                                <span className="cc-name">{g.name}</span>
-                                                <span className="cc-code">{g.groupCode}</span>
-                                            </button>
-                                        ))}
+                                        <div className="cc-box-body">
+                                            <div className="cc-list">
+                                                {groups.length === 0 ? (
+                                                    <div className="text-slate-400 text-sm">등록된 그룹이 없습니다.</div>
+                                                ) : groups.map((g) => (
+                                                    <button
+                                                        key={g.groupCode}
+                                                        className={`cc-item ${selectedGroup?.groupCode === g.groupCode ? 'is-active' : ''}`}
+                                                        onClick={() => { setSelectedGroup(g); setCodeEditor(null); }}
+                                                        title={g.description || g.groupCode}
+                                                    >
+                                                        <span className="cc-badge">{Number.isFinite(g.sortOrder) ? g.sortOrder : '-'}</span>
+                                                        <span className="cc-name">{g.name}</span>
+                                                        <span className="cc-code">{g.groupCode}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        {/* 오른쪽: 코드 목록 */}
+                        {/* ── 오른쪽: 코드 목록(= 권한 쪽으로 이해) ───── */}
                         <div className="aa-right-7">
                             <div className="aa-sticky-lg aa-panel-scroll">
                                 <div className="aa-panel-dark p-4">
-                                    <div className="flex items-center justify-between">
-                                        <div>
-                                            <div className="font-semibold">{selectedGroup?.name || '-'}</div>
-                                            <div className="text-xs text-slate-400">{selectedGroup?.groupCode || ''}</div>
+                                    {/* 🔆 권한/코드 박스(프레임) */}
+                                    <div className="cc-box">
+                                        <div className="cc-box-head">
+                                            <div>
+                                                <div className="font-semibold">{selectedGroup?.name || '-'}</div>
+                                                <div className="text-xs text-slate-400">{selectedGroup?.groupCode || ''}</div>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button className="aa-btn aa-btn-primary" onClick={openCreateCode} disabled={!selectedGroup}>코드 등록</button>
+                                            </div>
                                         </div>
-                                        <div className="flex gap-2">
-                                            <button className="aa-btn aa-btn-primary" onClick={openCreateCode} disabled={!selectedGroup}>코드 등록</button>
+
+                                        <div className="cc-box-body">
+                                            {loading ? (
+                                                <div className="text-slate-400">로딩 중…</div>
+                                            ) : (
+                                                <table className="cc-table">
+                                                    <thead>
+                                                    <tr>
+                                                        <th style={{width:'160px'}}>code</th>
+                                                        <th>name</th>
+                                                        <th style={{width:'80px'}}>정렬</th>
+                                                        <th style={{width:'120px'}}>사용</th>
+                                                        <th style={{width:'140px'}}>액션</th>
+                                                    </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                    {items.length === 0 ? (
+                                                        <tr><td colSpan={5} className="cc-empty">등록된 코드가 없습니다.</td></tr>
+                                                    ) : items
+                                                        .slice()
+                                                        .sort((a,b) => (a.sortOrder??0) - (b.sortOrder??0) || a.code.localeCompare(b.code))
+                                                        .map((row) => (
+                                                            <tr key={row.code}>
+                                                                <td><span className="font-mono">{row.code}</span></td>
+                                                                <td>{row.name}</td>
+                                                                <td>{Number.isFinite(row.sortOrder) ? row.sortOrder : '-'}</td>
+                                                                <td>{row.enabled ? 'true' : 'false'}</td>
+                                                                <td>
+                                                                    <div className="flex gap-2">
+                                                                        <button className="aa-btn" onClick={() => openEditCode(row)}>수정</button>
+                                                                        <button className="aa-btn aa-btn-danger" onClick={() => removeCode(row)}>삭제</button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            )}
                                         </div>
                                     </div>
 
-                                    <div className="mt-4">
-                                        {loading ? (
-                                            <div className="text-slate-400">로딩 중…</div>
-                                        ) : (
-                                            <table className="cc-table">
-                                                <thead>
-                                                <tr>
-                                                    <th style={{width:'160px'}}>code</th>
-                                                    <th>name</th>
-                                                    <th style={{width:'80px'}}>정렬</th>
-                                                    <th style={{width:'120px'}}>사용</th>
-                                                    <th style={{width:'140px'}}>액션</th>
-                                                </tr>
-                                                </thead>
-                                                <tbody>
-                                                {items.length === 0 ? (
-                                                    <tr><td colSpan={5} className="cc-empty">등록된 코드가 없습니다.</td></tr>
-                                                ) : items
-                                                    .slice()
-                                                    .sort((a,b) => (a.sortOrder??0) - (b.sortOrder??0) || a.code.localeCompare(b.code))
-                                                    .map((row) => (
-                                                        <tr key={row.code}>
-                                                            <td><span className="font-mono">{row.code}</span></td>
-                                                            <td>{row.name}</td>
-                                                            <td>{Number.isFinite(row.sortOrder) ? row.sortOrder : '-'}</td>
-                                                            <td>{row.enabled ? 'true' : 'false'}</td>
-                                                            <td>
-                                                                <div className="flex gap-2">
-                                                                    <button className="aa-btn" onClick={() => openEditCode(row)}>수정</button>
-                                                                    <button className="aa-btn aa-btn-danger" onClick={() => removeCode(row)}>삭제</button>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        )}
-                                    </div>
-
-                                    {/* 그룹 에디터 */}
+                                    {/* 그룹 에디터(오버레이) */}
                                     {groupEditor && (
                                         <div className="cc-editor">
                                             <div className="cc-editor-card">
@@ -380,7 +407,7 @@ export default function CommonCodeManagePage() {
                                         </div>
                                     )}
 
-                                    {/* 코드 에디터 */}
+                                    {/* 코드 에디터(오버레이) */}
                                     {codeEditor && (
                                         <div className="cc-editor">
                                             <div className="cc-editor-card">

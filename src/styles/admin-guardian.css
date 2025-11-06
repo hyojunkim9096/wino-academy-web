@@ -1,0 +1,23 @@
+/* src/styles/admin-guardian.css
+   ------------------------------------------------------------------
+   보호자 관리 전용 스킨
+   - 페이지 네임스페이스: .guardian-page
+   - 목록 스크롤: .guardian-list-panel
+   ------------------------------------------------------------------ */
+
+.guardian-page .guardian-list-panel{
+    max-height: calc(100vh - 18rem);
+    overflow: auto;
+}
+
+.guardian-page .aa-input{
+    background:#0b162f;
+    color:var(--aa-text);
+    border:1px solid #334155;
+    border-radius:.55rem;
+    padding:.46rem .62rem;
+}
+.guardian-page .aa-input:focus{
+    border-color:var(--aa-accent);
+    box-shadow:0 0 0 2px rgba(99,102,241,.35);
+}

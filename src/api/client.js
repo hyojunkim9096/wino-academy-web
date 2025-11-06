@@ -1,42 +1,109 @@
 // src/api/client.js
+// ============================================================================
+// WINO Academy Admin — Axios 클라이언트
+// ----------------------------------------------------------------------------
+// 기능 요약
+// 1) Axios 인스턴스 생성(+ 기본 옵션)
+// 2) BroadcastChannel 로 탭 간 강제 로그아웃 동기화
+// 3) 강제 로그아웃 유틸(forceLogout): 토큰/헤더 정리, 메시지 저장, 라우팅
+// 4) 요청 인터셉터:
+//    - Authorization 헤더 'Bearer ' 접두 정규화
+//    - ★ event_by 기록용 현재 관리자 PK → 'X-App-User-Id' 자동 첨부
+//    - ★ event_note 기록용 메모 → 'X-Event-Note' (옵션) 첨부
+//    - Ajax 식별 헤더 'X-Requested-With' 추가
+// 5) 응답 인터셉터:
+//    - 401/403/423 → 세션 만료/충돌/잠금 케이스별 메시지 후 강제 로그아웃
+//    - 로그인/공개 API/초기 레이스 등은 예외
+// 6) 초기 부팅 시 기본 헤더 보정(토큰/유저ID 재적용)
+// 7) ★ 부트 타임 가드: 로그인 안 된 상태에서 /admin/* 접근 → 로그인으로 리다이렉트
+//    - /admin/login, /admin/forgot-password, /admin/signUp 등은 예외
+// ----------------------------------------------------------------------------
+// 사용법(이벤트 노트):
+//   api.post(url, body, { meta: { eventNote: '스냅샷 저장' } })
+//   또는
+//   api.post(url, body, { headers: { 'X-Event-Note': '스냅샷 저장' } })
+// 서버 측 인터셉터(AppUserSqlVarInterceptor)는 이 헤더를 읽어 AppUserContext에 넣고,
+// 서비스(@Transactional)에서 DbSessionVars.setAppVars(userId, note)로 DB 세션 변수에 주입합니다.
+// ============================================================================
+
 import axios from 'axios';
 
-const api = axios.create({ baseURL: '/api', withCredentials: false });
+// ---------------------------------------------------------------------------
+// 0) 유틸: eventNote 정리(길이 제한/개행 정리 등)
+// ---------------------------------------------------------------------------
+function sanitizeEventNote(note) {
+    if (!note) return '';
+    try {
+        let s = String(note);
+        s = s.replace(/\r\n/g, '\n').replace(/\t/g, ' ');
+        const MAX = 500; // 컬럼/트리거 길이에 맞춰 조정
+        if (s.length > MAX) s = s.slice(0, MAX);
+        return s;
+    } catch {
+        return '';
+    }
+}
 
-// BroadcastChannel (탭 간 통신)
+// ---------------------------------------------------------------------------
+// 1) Axios 인스턴스
+// ---------------------------------------------------------------------------
+const api = axios.create({
+    baseURL: '/api',
+    withCredentials: false // JWT는 Authorization 헤더로 운용
+});
+
+// ---------------------------------------------------------------------------
+// 2) BroadcastChannel (다른 탭과 통신: 강제 로그아웃 브로드캐스트)
+// ---------------------------------------------------------------------------
 let bc;
-try { bc = new BroadcastChannel('auth-channel'); } catch { bc = null; }
+try {
+    bc = new BroadcastChannel('auth-channel');
+} catch {
+    bc = null;
+}
 
-// 메시지 키/가드
-const MSG_KEY   = 'logoutMessage';
+// ---------------------------------------------------------------------------
+// 3) 세션 종료 안내 메시지 & 중복 처리 가드
+// ---------------------------------------------------------------------------
+const MSG_KEY = 'logoutMessage';
+const KICK_KEY = 'kickMsg';
 const GUARD_KEY = 'logout:inflight';
 
-// 유틸: 메시지 저장(로그인 화면에서 읽어서 안내)
-function putMsg(msg){
-    try{
+function putMsg(msg) {
+    try {
         sessionStorage.setItem(MSG_KEY, msg || '');
-        sessionStorage.setItem('kickMsg', msg || '');
-    }catch{}
+        sessionStorage.setItem(KICK_KEY, msg || '');
+    } catch {}
+}
+function setGuard(on) {
+    try {
+        on ? sessionStorage.setItem(GUARD_KEY, '1') : sessionStorage.removeItem(GUARD_KEY);
+    } catch {}
+}
+function hasGuard() {
+    try {
+        return !!sessionStorage.getItem(GUARD_KEY);
+    } catch { return false; }
 }
 
-// 유틸: 가드(중복 강제 로그아웃 방지)
-function setGuard(on){
-    try{ on ? sessionStorage.setItem(GUARD_KEY,'1') : sessionStorage.removeItem(GUARD_KEY);}catch{}
-}
-function hasGuard(){
-    try{ return !!sessionStorage.getItem(GUARD_KEY);}catch{ return false;}
-}
-
-// 유틸: 경로만 뽑기
-function pathOf(url){
-    if(!url) return '';
-    try{
-        if(url.startsWith('http://') || url.startsWith('https://')) return new URL(url).pathname;
+// ---------------------------------------------------------------------------
+// 4) URL에서 경로만 뽑기(로그/분기용)
+// ---------------------------------------------------------------------------
+function pathOf(url) {
+    if (!url) return '';
+    try {
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+            return new URL(url).pathname;
+        }
         return url;
-    }catch{ return url; }
+    } catch {
+        return url;
+    }
 }
 
-// 코드→쿼리 매핑 (백업 경로용)
+// ---------------------------------------------------------------------------
+// 5) 코드→로그인 화면 reason 쿼리 매핑
+// ---------------------------------------------------------------------------
 function codeToReason(code) {
     switch (code) {
         case 'SESSION_CONFLICT': return 'conflict';
@@ -46,129 +113,184 @@ function codeToReason(code) {
     }
 }
 
-// ✅ 강제 로그아웃 & 이동(BC 방송 여부 옵션 추가)
-// - 메시지는 sessionStorage에 저장
-// - /admin/login?reason=... 쿼리로도 전달(백업 안내)
-// - 다른 탭으로 code 포함 방송(옵션)
-// - 동일 탭/중복 호출 가드는 hasGuard()/setGuard()
-function forceLogout(msg, code='SESSION_EXPIRED', opts = {}) {
+// ---------------------------------------------------------------------------
+// 6) ✅ 강제 로그아웃
+// ---------------------------------------------------------------------------
+function forceLogout(msg, code = 'SESSION_EXPIRED', opts = {}) {
     const { broadcast = true } = opts;
     if (hasGuard()) return;
     setGuard(true);
 
-    // 토큰 제거
-    try{ localStorage.removeItem('accessToken'); }catch{}
-    try{ delete api.defaults.headers.common.Authorization; }catch{}
+    // 1) 클라이언트 상태 정리
+    try { localStorage.removeItem('accessToken'); } catch {}
+    try { localStorage.removeItem('currentAdminId'); } catch {}
 
-    // 메시지 저장
+    // 2) 기본 헤더 정리
+    try { delete api.defaults.headers.common.Authorization; } catch {}
+    try { delete api.defaults.headers.common['X-App-User-Id']; } catch {}
+    try { delete api.defaults.headers.common['X-Event-Note']; } catch {}
+
+    // 3) 메시지 저장
     putMsg(msg);
 
-    // 다른 탭에 알림 (code 포함)
-    try{ if (bc && broadcast) bc.postMessage({ type:'force-logout', msg, code }); }catch{}
+    // 4) 브로드캐스트
+    try { if (bc && broadcast) bc.postMessage({ type: 'force-logout', msg, code }); } catch {}
 
-    // 이동 (백업 쿼리 동봉)
+    // 5) 로그인 화면으로 이동
     const reason = codeToReason(code);
-    if (typeof window!=='undefined') {
-        setTimeout(() => { window.location.href = `/admin/login?reason=${encodeURIComponent(reason)}`; }, 10);
+    if (typeof window !== 'undefined') {
+        setTimeout(() => {
+            window.location.href = `/admin/login?reason=${encodeURIComponent(reason)}`;
+        }, 10);
     }
 }
 
-// ✅ 다른 탭에서 오는 강제 로그아웃 방송 수신
-try{
+// 다른 탭에서의 방송 수신
+try {
     if (bc) {
         bc.onmessage = (e) => {
             const data = e?.data;
             if (data?.type === 'force-logout') {
-                // 방송을 받고 처리할 때는 재방송(broadcast=false)로 루프 방지
                 forceLogout(data.msg, data.code, { broadcast: false });
             }
         };
     }
-}catch{}
+} catch {}
 
-// 요청 인터셉터: Authorization 보정(Bearer 접두 보장)
+// ---------------------------------------------------------------------------
+// 7) 요청 인터셉터
+// ---------------------------------------------------------------------------
 api.interceptors.request.use((config) => {
-    const raw = (
+    // 1) Authorization 'Bearer ' 접두 보정
+    const raw =
         config.headers?.Authorization ||
         config.headers?.authorization ||
         api.defaults.headers.common.Authorization ||
         (typeof localStorage !== 'undefined' && localStorage.getItem('accessToken')) ||
-        ''
-    );
+        '';
     if (raw) {
         const val = raw.startsWith('Bearer ') ? raw : `Bearer ${raw}`;
         config.headers = { ...(config.headers || {}), Authorization: val };
     }
+
+    // 2) 현재 관리자 PK → X-App-User-Id
+    try {
+        const uid = localStorage.getItem('currentAdminId');
+        if (uid) config.headers = { ...(config.headers || {}), 'X-App-User-Id': String(uid) };
+    } catch {}
+
+    // 3) (옵션) 이벤트 노트 → X-Event-Note
+    const explicitHeaderNote = config?.headers?.['X-Event-Note'];
+    const metaNote = config?.meta?.eventNote;
+    const note = explicitHeaderNote ?? metaNote;
+    if (note != null && note !== '') {
+        const clean = sanitizeEventNote(note);
+        if (clean) config.headers = { ...(config.headers || {}), 'X-Event-Note': clean };
+    }
+
+    // 4) Ajax 식별
+    config.headers = { ...(config.headers || {}), 'X-Requested-With': 'XMLHttpRequest' };
     return config;
 });
 
-// 응답 인터셉터: 전역 401/403/423 처리
+// ---------------------------------------------------------------------------
+// 8) 응답 인터셉터
+// ---------------------------------------------------------------------------
 api.interceptors.response.use(
     (resp) => resp,
     (error) => {
-        // 공개 API 등에서 전역 처리 끄기
         if (error?.config?.skipAuthErrorPopup) return Promise.reject(error);
         if (!error?.response) return Promise.reject(error);
 
         const status = error.response.status;
         const reqUrl = pathOf(error?.config?.url || '');
 
-        // 로그인/비번/리셋 화면에서는 전역 팝업 무시
+        // 로그인 유사 화면에서는 전역 세션 팝업 억제
         const pathname = (typeof window !== 'undefined' && window.location) ? window.location.pathname : '';
-        const onLoginLikePage = /\/admin\/(login|password|reset|find)/.test(pathname || '');
-        if (onLoginLikePage && (status===401 || status===403 || status===423)) return Promise.reject(error);
+        const onLoginLikePage = /\/admin\/(login|forgot-password|password|reset|find|signUp)/.test(pathname || '');
+        if (onLoginLikePage && (status === 401 || status === 403 || status === 423)) {
+            return Promise.reject(error);
+        }
 
         // /auth/login 실패는 각 페이지에서 처리
         if (/\/auth\/login(\b|\/|$)/.test(reqUrl)) return Promise.reject(error);
 
-        // 토큰 없는 ping/me 401/403은 무시 (초기 레이스 방지)
+        // 토큰 없는 ping/me 401/403은 초기 레이스로 간주하고 무시
         const isPingOrMe = /\/auth\/(ping|me)(\b|\/|$)/.test(reqUrl);
         const hasJwt = !!(typeof localStorage !== 'undefined' && localStorage.getItem('accessToken'));
-        if (!hasJwt && isPingOrMe && (status===401 || status===403)) return Promise.reject(error);
+        if (!hasJwt && isPingOrMe && (status === 401 || status === 403)) {
+            return Promise.reject(error);
+        }
 
-        if (status===401 || status===403 || status===423) {
-            // ✅ 헤더 파싱 강화(대소문자/하이픈/언더스코어 변형 다 대응)
+        // 인증/인가/잠금 관련 에러 통합 처리
+        if (status === 401 || status === 403 || status === 423) {
             const headers = (error.response && error.response.headers) || {};
             const headerCode = (
                 headers['x-auth-error']  || headers['X-Auth-Error'] ||
                 headers['x-auth_code']   || headers['X-Auth_Code']  ||
-                headers['x-auth-code']   || headers['X-Auth-Code']  ||  // ← 보강
-                ''
+                headers['x-auth-code']   || headers['X-Auth-Code']  || ''
             ).toString();
             const body = error.response.data;
             const bodyCode = (body && (body.error || body.code)) || '';
 
-            // 403은 '권한 없음'일 수 있으므로 세션 종료 대신 안내만 (충돌/잠금은 예외)
             if (status === 403) {
-                const isConflict = (headerCode==='SESSION_CONFLICT' || bodyCode==='SESSION_CONFLICT');
-                const isLocked   = (headerCode==='ACCOUNT_LOCKED'   || bodyCode==='ACCOUNT_LOCKED');
-                if (!isConflict && !isLocked) {
-                    return Promise.reject(error);
-                }
+                const isConflict = (headerCode === 'SESSION_CONFLICT' || bodyCode === 'SESSION_CONFLICT');
+                const isLocked   = (headerCode === 'ACCOUNT_LOCKED'   || bodyCode === 'ACCOUNT_LOCKED');
+                if (!isConflict && !isLocked) return Promise.reject(error);
             }
 
-            // 메시지 & 코드 결정
-            let msg='', code='SESSION_EXPIRED';
-            if (isPingOrMe || headerCode==='SESSION_CONFLICT' || bodyCode==='SESSION_CONFLICT'){
-                msg='다른 장소에서 로그인하여 로그아웃 되었습니다.'; code='SESSION_CONFLICT';
-            } else if (headerCode==='ACCOUNT_LOCKED' || bodyCode==='ACCOUNT_LOCKED' || status===423){
-                msg='계정이 잠겨 접속을 해제합니다.'; code='ACCOUNT_LOCKED';
+            let msg = '', code = 'SESSION_EXPIRED';
+            if (isPingOrMe || headerCode === 'SESSION_CONFLICT' || bodyCode === 'SESSION_CONFLICT') {
+                msg = '다른 장소에서 로그인하여 로그아웃 되었습니다.'; code = 'SESSION_CONFLICT';
+            } else if (headerCode === 'ACCOUNT_LOCKED' || bodyCode === 'ACCOUNT_LOCKED' || status === 423) {
+                msg = '계정이 잠겨 접속을 해제합니다.'; code = 'ACCOUNT_LOCKED';
             } else {
-                msg='세션이 만료되었거나 해제되었습니다.'; code='SESSION_EXPIRED';
+                msg = '세션이 만료되었거나 해제되었습니다.'; code = 'SESSION_EXPIRED';
             }
 
-            forceLogout(msg, code); // 기본: 방송 on
-            // 체인 종료(중복 처리 방지)
-            return new Promise(()=>{});
+            forceLogout(msg, code);
+            return new Promise(() => {});
         }
+
         return Promise.reject(error);
     }
 );
 
-// 새로고침 시 헤더 보정
+// ---------------------------------------------------------------------------
+// 9) 초기 부팅 시: 저장된 토큰/현재관리자ID를 기본 헤더에 재적용
+// ---------------------------------------------------------------------------
 (() => {
-    const saved = (typeof localStorage !== 'undefined') ? localStorage.getItem('accessToken') : '';
-    if (saved) api.defaults.headers.common.Authorization = saved.startsWith('Bearer ') ? saved : `Bearer ${saved}`;
+    try {
+        const saved = (typeof localStorage !== 'undefined') ? localStorage.getItem('accessToken') : '';
+        if (saved) api.defaults.headers.common.Authorization = saved.startsWith('Bearer ') ? saved : `Bearer ${saved}`;
+    } catch {}
+
+    try {
+        const uid = (typeof localStorage !== 'undefined') ? localStorage.getItem('currentAdminId') : '';
+        if (uid) api.defaults.headers.common['X-App-User-Id'] = String(uid);
+    } catch {}
+})();
+
+// ---------------------------------------------------------------------------
+// 10) ★ 부트 타임 가드: 미인증 상태에서 /admin/* 직접 접근 시 로그인으로 보냄
+// ---------------------------------------------------------------------------
+(() => {
+    if (typeof window === 'undefined') return;
+    const path = window.location.pathname || '';
+    const isAdminArea = path.startsWith('/admin/');
+    const isLoginPage = /\/admin\/(login|forgot-password|signUp)(\/|$)?/.test(path);
+    if (!isAdminArea || isLoginPage) return;
+
+    let hasToken = false;
+    try {
+        const token = localStorage.getItem('accessToken') || '';
+        hasToken = !!token;
+    } catch {}
+
+    if (!hasToken) {
+        const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
+        window.location.replace(`/admin/login?returnTo=${returnTo}`);
+    }
 })();
 
 export default api;

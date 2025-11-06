@@ -1,96 +1,55 @@
-/* src/styles/admin-codes.css */
-/* 공통코드 페이지 전용 살짝 보완 */
+/* src/styles/admin-codes.css — 공통코드 페이지 전용
+   ------------------------------------------------------------
+   이 파일은 공통코드 관리 화면 전용 스타일입니다.
+   - 좌우 분할 레이아웃(aa-split 3:7)
+   - 카드형 리스트/테이블/오버레이 에디터 스킨
+   - .cc-box(틀), .cc-box-head/.cc-box-body 프레임
+   ⚠️ 이 파일은 해당 페이지에서만 import 된다는 전제(전역 .aa-split 사용).
+   ------------------------------------------------------------ */
 
-.cc-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+/* 좌우 분할 레이아웃 유틸(3:7) */
+.aa-split { display: grid; gap: 1rem; }
+.aa-split.aa-split-3-7 { grid-template-columns: 1fr; }
+@media (min-width: 1024px) {
+    .aa-split.aa-split-3-7 { grid-template-columns: 3fr 7fr; }
 }
 
+/* 좌/우 헬퍼(선택) */
+.aa-left-3 { }
+.aa-right-7 { }
+
+/* 공통 틀(박스) */
+.cc-box{
+    border: 1px solid var(--aa-border, #1f2a3a);
+    border-radius: 12px;
+    background: rgba(15,23,42,.45);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+}
+.cc-box-head{
+    display:flex; align-items:center; justify-content:space-between; gap:.5rem;
+    padding: 10px 12px;
+    border-bottom: 1px dashed var(--aa-border, #243041);
+}
+.cc-box-body{ padding: 10px 12px; }
+
+/* 리스트(좌측) */
+.cc-list { display:flex; flex-direction:column; gap:6px; }
 .cc-item {
-    display: grid;
-    grid-template-columns: 40px 1fr auto;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    border: 1px solid rgb(51 65 85);   /* slate-700 */
-    border-radius: 8px;
-    background: rgb(30 41 59);         /* slate-800 */
-    color: #fff;
-    text-align: left;
+    display:grid; grid-template-columns:40px 1fr auto; align-items:center; gap:8px;
+    padding:8px 10px; border:1px solid rgb(51 65 85); border-radius:8px;
+    background: rgb(30 41 59); color:#fff; text-align:left;
 }
 .cc-item:hover { background: rgb(51 65 85); }
 .cc-item.is-active { background: rgb(2 6 23); border-color: rgb(71 85 105); }
 
-.cc-badge {
-    display: inline-block;
-    font-size: 12px;
-    padding: 2px 6px;
-    background: rgb(51 65 85);
-    border-radius: 6px;
-    text-align: center;
-}
-
+.cc-badge { display:inline-block; font-size:12px; padding:2px 6px; background: rgb(51 65 85); border-radius:6px; text-align:center; }
 .cc-name { font-weight: 600; }
 .cc-code { font-size: 12px; color: rgb(148 163 184); }
 
-.cc-table {
-    width: 100%;
-    border-collapse: collapse;
-    border: 1px solid rgb(51 65 85);
-    border-radius: 8px;
-    overflow: hidden;
-}
-.cc-table th,
-.cc-table td {
-    padding: 10px 12px;
-    border-bottom: 1px solid rgb(51 65 85);
-}
-.cc-table thead th {
-    background: rgb(30 41 59);
-    color: rgb(226 232 240);
-    font-weight: 600;
-}
-.cc-empty {
-    text-align: center;
-    color: rgb(148 163 184);
-    padding: 20px 0;
-}
+/* 테이블(우측) */
+.cc-table { width:100%; border-collapse: collapse; border:1px solid rgb(51 65 85); border-radius:8px; overflow:hidden; }
+.cc-table th, .cc-table td { padding:10px 12px; border-bottom:1px solid rgb(51 65 85); }
+.cc-table thead th { background: rgb(30 41 59); color: rgb(226 232 240); font-weight:600; }
+.cc-empty { text-align:center; color: rgb(148 163 184); padding:20px 0; }
 
-/* 오른쪽 카드형 에디터(오버레이) */
-.cc-editor {
-    position: fixed;
-    inset: 0;
-    background: rgba(2, 6, 23, .55);
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    padding-top: calc(var(--aa-header-h) + 40px);
-    z-index: 50;
-}
-.cc-editor-card {
-    width: min(680px, 92vw);
-    background: rgb(15 23 42); /* slate-900 */
-    border: 1px solid rgb(51 65 85);
-    border-radius: 12px;
-    padding: 16px;
-    color: #fff;
-    box-shadow: 0 10px 30px rgba(0,0,0,.35);
-}
-
-.cc-label {
-    display: block;
-    font-size: 12px;
-    color: rgb(148 163 184);
-    margin-bottom: 4px;
-}
-.cc-input {
-    width: 100%;
-    border: 1px solid rgb(71 85 105);
-    background: rgb(30 41 59);
-    color: #fff;
-    border-radius: 8px;
-    padding: 8px 10px;
-    outline: none;
-}
-.cc-input:focus { border-color: rgb(99 102 241); /* indigo-500 */ }
+/* 오버레이 에디터 — 공용 cc-editor 스킨 사용 (admin-system.css) */

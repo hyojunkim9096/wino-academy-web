@@ -1,0 +1,58 @@
+/* src/styles/admin-academy.css — 학원관리 공통 레이아웃（다크 베이스 사용）
+   - 페이지 스코프: `.academy-page`
+   - `.aa-card`는 시스템 토큰 사용(다크 패널)
+*/
+
+.aa-page { padding: 0.75rem 0; }
+
+.aa-container {
+    max-width: 1280px; margin: 0 auto; padding: 0 16px;
+}
+@media (min-width: 1280px){ .aa-container { max-width: 1440px; } }
+@media (min-width: 1536px){ .aa-container { max-width: 1600px; } }
+
+/* 좌/우 분할(모바일: 스택 → md+: 5:7) */
+.academy-page .aa-split {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: 1fr;
+}
+@media (min-width: 768px){
+    .academy-page .aa-split { grid-template-columns: 5fr 7fr; }
+}
+.academy-page .aa-split-tight { gap: 0.5rem; }
+
+/* 카드 */
+.aa-card {
+    background: var(--aa-panel);
+    border: 1px solid var(--aa-border);
+    border-radius: .75rem;
+    padding: 1rem;
+}
+
+/* 상단 툴바/세그먼트 */
+.aa-topbar { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+.aa-topbar .aa-seg { margin-right: auto; }
+
+/* 칩 */
+.academy-page .aa-chip {
+    padding: .25rem .6rem; border: 1px solid var(--aa-border);
+    border-radius: 999px; background: #0b162f; color: var(--aa-text);
+}
+.academy-page .aa-chip-on {
+    background: var(--aa-accent-strong);
+    border-color: var(--aa-accent-strong);
+    color: #fff;
+}
+
+/* 유틸 */
+.mt-8 { margin-top: .8rem; } .mt-12 { margin-top: 1.2rem; }
+.mr-6 { margin-right: .6rem; } .mb-6 { margin-bottom: .6rem; }
+.w-80 { width: 20rem; } .w-28 { width: 7rem; }
+.text-right { text-align: right; }
+.text-center { text-align: center; }
+
+/* ⛑ 상단 클릭 보장(오버레이와 충돌시) */
+.aa-toolbar, .aa-topbar { position: relative; z-index: 1000; pointer-events: auto !important; }
+.aa-topbar *, .aa-toolbar * { pointer-events: auto !important; }
+.aa-topbar button, .aa-toolbar button { cursor: pointer; }

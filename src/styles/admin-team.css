@@ -1,0 +1,177 @@
+/* ============================================================================
+ * admin-team.css (TeamAdminPage 전용) - 2025-11-05 리팩토링 확정본
+ * - 네임스페이스: .team-admin / .ta-*
+ * - 변경점:
+ *   1) max-width 가변: --ta-max만 사용(정의되지 않은 --admin-max 제거)
+ *   2) 좌측 사이드폭 clamp로 가변(큰 화면 여유, 작은 화면 안전)
+ *   3) .ta-right 남용 제거 → .ta-main(우측 레이아웃) / .ta-align-right(텍스트 정렬)
+ *   4) TeamCreateModal용 보조 유틸 클래스 포함
+ * ========================================================================== */
+
+:root {
+    /* 페이지 최대 폭 */
+    --ta-max: 1440px;
+}
+
+@media (min-width: 1536px) {
+    :root { --ta-max: 1600px; }
+}
+
+.team-admin {
+    padding: 16px;
+    color: #e5e7eb;
+}
+
+/* 래퍼: 다른 페이지들과 일관된 넓이 확보 */
+.ta-wrap {
+    width: 100%;
+    max-width: var(--ta-max);
+    margin: 0 auto;
+}
+
+/* 제목 */
+.ta-title { font-size: 20px; font-weight: 700; margin: 4px 0 12px; }
+
+/* 2열 그리드: 모바일 1열, 데스크탑 2열 */
+.ta-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+
+@media (min-width: 1024px) {
+    /* 좌측: 300~420px 가변 / 우측: 나머지 */
+    .ta-grid { grid-template-columns: clamp(300px, 24vw, 420px) 1fr; gap: 16px; }
+}
+
+/* 컬럼 컨테이너 */
+.ta-left, .ta-main { display: flex; flex-direction: column; gap: 10px; }
+
+/* 패널 */
+.ta-panel {
+    background: #0f172a;
+    border: 1px solid #1f2937;
+    border-radius: 12px;
+    padding: 14px;
+}
+
+/* 행/라벨/컨트롤 */
+.ta-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.ta-label { font-size: 12px; color: #94a3b8; min-width: 90px; }
+
+.ta-input, .ta-select {
+    width: 100%;
+    background: #111827;
+    border: 1px solid #374151;
+    color: #e5e7eb;
+    border-radius: 8px;
+    padding: 8px 10px;
+    outline: none;
+}
+.ta-input:focus, .ta-select:focus { border-color: #4f46e5; }
+
+/* 버튼 */
+.ta-btn {
+    background: #111827;
+    border: 1px solid #374151;
+    color: #e5e7eb;
+    padding: 6px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+.ta-btn:hover { background: #0b1220; }
+.ta-btn:disabled { opacity: .6; cursor: not-allowed; }
+.ta-primary { background: #4f46e5; border-color: #4f46e5; }
+.ta-primary:hover { filter: brightness(1.05); }
+
+/* 리스트 */
+.ta-list { padding: 0; }
+.ta-empty { padding: 16px; color: #9ca3af; text-align: center; }
+
+.ta-item {
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    padding: 10px 12px;
+    display: block;
+    border-bottom: 1px solid #1f2937;
+}
+.ta-item:last-child { border-bottom: 0; }
+.ta-item:hover { background: #0b1220; }
+.ta-item.is-active { background: #111827; font-weight: 600; }
+.ta-item-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ta-item-sub { font-size: 12px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 페이지네이션 */
+.ta-pager { display:flex; align-items:center; justify-content:space-between; color:#94a3b8; font-size:12px; }
+
+/* 헤더 */
+.ta-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom: 10px; }
+.ta-name { font-size: 18px; font-weight: 700; }
+.ta-code { font-size: 12px; color:#94a3b8; }
+
+/* 2열 필드 그리드 */
+.ta-grid2 { display: grid; grid-template-columns: 1fr; gap: 10px; }
+@media (min-width: 640px) { .ta-grid2 { grid-template-columns: repeat(2, 1fr); } }
+
+.ta-field { display:flex; flex-direction: column; gap: 4px; }
+.ta-field-label { font-size: 12px; color:#a1a1aa; margin-bottom: 2px; }
+.ta-ro {
+    background:#111827; border:1px solid #374151; border-radius:8px;
+    padding:8px 10px; color:#e5e7eb;
+}
+
+/* 섹션 */
+.ta-section { margin-top: 12px; padding-top: 10px; border-top: 1px solid #1f2937; }
+.ta-section-head { display:flex; align-items:center; justify-content:space-between; margin-bottom: 8px; }
+.ta-section-title { font-weight: 700; }
+
+/* 구성원 카드 */
+.ta-members { display:flex; flex-direction: column; gap: 8px; }
+.ta-member {
+    display:flex; align-items: center; justify-content: space-between;
+    padding:8px; border:1px solid #1f2937; border-radius: 8px;
+}
+.ta-member-info { min-width:0; }
+.ta-member-name { font-weight:600; }
+.ta-member-sub { font-size:12px; color:#94a3b8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ta-member-ops { display:flex; align-items:center; gap:6px; }
+
+/* ---- 유틸리티: 텍스트 우측 정렬(기존 .ta-right 대체) ---- */
+.ta-align-right { text-align: right; }
+
+/* ---- 모달 ---- */
+.ta-modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,.6);
+    display:flex; align-items:center; justify-content:center; z-index: 50;
+}
+.ta-modal {
+    width: min(720px, 92vw);
+    background:#0f172a; border:1px solid #1f2937; border-radius:12px;
+    max-height: 80vh; display:flex; flex-direction: column;
+}
+.ta-modal-head { padding: 12px; border-bottom:1px solid #1f2937; display:flex; align-items:center; justify-content:space-between; }
+.ta-modal-title { font-weight:700; }
+.ta-modal-close { background:transparent; border:0; color:#e5e7eb; font-size:20px; cursor:pointer; }
+.ta-modal-body { padding: 12px; overflow:auto; }
+.ta-modal-field { margin-bottom:10px; }
+.ta-modal-list { border:1px solid #1f2937; border-radius:8px; overflow:hidden; }
+.ta-modal-item {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 12px; border-bottom:1px solid #1f2937;
+}
+.ta-modal-item:last-child { border-bottom:0; }
+.ta-modal-item-name { font-weight:600; }
+.ta-modal-item-sub { font-size:12px; color:#94a3b8; }
+.ta-modal-item-ops { display:flex; gap:8px; }
+.ta-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+/* ---- TeamCreateModal / 폼 유틸 ---- */
+.ta-form-grid { display:grid; grid-template-columns: 1fr; gap:10px; }
+@media (min-width: 640px) { .ta-form-grid { grid-template-columns: 1fr 1fr; } }
+
+.ta-help { font-size:12px; color:#9ca3af; margin-top:4px; }
+
+.ta-badge {
+    display:inline-block; padding:2px 6px; border-radius:6px;
+    background:#111827; border:1px solid #374151; color:#e5e7eb; font-size:12px;
+}
+
+/* (참고) 기존 .ta-right(우측 컬럼) 정의는 제거되어 .ta-main으로 대체됩니다. */

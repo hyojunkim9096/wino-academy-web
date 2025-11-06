@@ -1,0 +1,140 @@
+/* src/styles/admin-school.css
+   -----------------------------------------------------------------------------
+   학교/지역/업로드 화면 전용 보조 스킨 (다크 베이스 기준)
+   - 페이지 스코프: .school-page
+   - 레이아웃: .aa-split.aa-split-4-6
+   - 컨테이너/버튼/유틸은 admin-system.css 의 전역을 사용
+   - TeacherPicker/cc-editor 등 공용 컴포넌트는 베이스 사용
+   ----------------------------------------------------------------------------- */
+
+.school-page {
+    --sp-radius: 1rem;
+    --sp-radius-sm: .7rem;
+    --sp-gap: .75rem;
+    --sp-gap-sm: .5rem;
+    --sp-panel-pad: 1rem;
+    --sp-panel-pad-lg: 1.25rem;
+
+    --sp-text: var(--aa-text, #e5e7eb);
+    --sp-muted: var(--aa-muted, #9ca3af);
+    --sp-border: var(--aa-border, #334155);
+    --sp-accent: var(--aa-accent, #6366f1);
+    --sp-card-bg: var(--aa-panel, #0b162f);
+    --sp-card-bg-hover: #0f172a;
+    --sp-shadow: 0 8px 22px rgba(2, 6, 23, .35);
+    --sp-shadow-inset: 0 0 0 2px color-mix(in srgb, var(--sp-accent) 25%, transparent) inset;
+}
+
+/* 상하 패딩/툴바 간격 */
+.school-page { padding-top: .25rem; padding-bottom: 1rem; }
+.school-page .aa-toolbar { margin-bottom: .75rem; }
+
+/* 카드 패널 스킨 */
+.school-page .aa-panel--card {
+    padding: var(--sp-panel-pad);
+    border-radius: var(--sp-radius);
+    background: var(--sp-card-bg);
+    color: var(--sp-text);
+    box-shadow: var(--sp-shadow);
+    border: 1px solid var(--sp-border);
+}
+@media (min-width: 1024px) {
+    .school-page .aa-panel--card { padding: var(--sp-panel-pad-lg); }
+}
+
+/* 레이아웃: 좌/우 4:6 */
+.school-page .aa-split { display: grid; gap: 1rem; }
+.school-page .aa-split.aa-split-4-6 { grid-template-columns: 1fr; }
+@media (min-width: 1024px) {
+    .school-page .aa-split.aa-split-4-6 { grid-template-columns: 4fr 6fr; }
+}
+.school-page .aa-left-4 { }
+.school-page .aa-right-6 { }
+
+/* 필터 그리드 */
+.school-filters { display: grid; gap: var(--sp-gap); grid-template-columns:1fr; }
+@media (min-width: 1024px) { .school-filters { grid-template-columns: 1fr 1fr; } }
+.school-filters .field-region { grid-column: 1 / -1; }
+.field-region .aa-select { width: 100%; }
+.field-region .aa-grid { gap: .5rem; }
+
+/* 학교명 라인 */
+.school-filters .field-name-row .aa-row { display: flex; align-items: center; gap: var(--sp-gap-sm); }
+.school-filters .field-name-row .aa-row .aa-input { flex: 1 1 auto; min-width: 0; }
+
+/* 목록/아이템 */
+.school-list { margin-top: .75rem; display: flex; flex-direction: column; gap: .6rem; }
+.school-item {
+    text-align: left; border: 1px solid var(--sp-border); border-radius: var(--sp-radius-sm);
+    background: var(--sp-card-bg); color: var(--sp-text); padding: .7rem .8rem;
+    transition: background-color .15s ease, border-color .15s ease, transform .06s ease, box-shadow .15s ease;
+    will-change: transform;
+}
+.school-item:hover {
+    background: var(--sp-card-bg-hover);
+    border-color: color-mix(in srgb, var(--sp-border) 60%, var(--sp-accent) 40%);
+    transform: translateY(-1px);
+}
+.school-item.on { border-color: var(--sp-accent); box-shadow: var(--sp-shadow-inset); }
+.school-item:focus-visible {
+    outline: none; border-color: var(--sp-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--sp-accent) 35%, transparent);
+}
+.school-item-top { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-gap-sm); }
+.school-name { font-weight: 700; letter-spacing: .2px; }
+.school-addr { color: var(--sp-muted); font-size: .92rem; margin-top: .15rem; }
+.school-meta { display: flex; gap: .35rem; margin-top: .35rem; flex-wrap: wrap; }
+
+/* 페이지네이션 */
+.school-pager {
+    display: flex; align-items: center; justify-content: center;
+    border-top: 1px solid var(--sp-border);
+    padding-top: .65rem; margin-top: .65rem; gap: .75rem;
+}
+.school-pager .count { color: var(--sp-muted); margin-right: .5rem; }
+
+/* 빈 상태 */
+.school-empty {
+    text-align: center; color: var(--sp-muted); padding: 1.25rem 0;
+    border: 1px dashed var(--sp-border); border-radius: .8rem; background: rgba(2, 6, 23, .25);
+}
+
+/* 텍스트 유틸 */
+.aa-ellipsis { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* 입력/선택 스킨(다크) */
+.school-page .aa-input, .school-page .aa-select {
+    border-radius: .6rem; border: 1px solid var(--sp-border); background: #0b1224; color: var(--sp-text);
+}
+.school-page .aa-input:focus-visible, .school-page .aa-select:focus-visible {
+    outline: none; border-color: var(--sp-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--sp-accent) 30%, transparent);
+}
+
+/* 버튼 스킨(페이지 한정) */
+.school-page .aa-btn { border-radius: .7rem; transition: transform .06s ease, box-shadow .15s ease, background-color .15s ease; }
+.school-page .aa-btn:hover { transform: translateY(-1px); }
+.school-page .aa-btn:active { transform: translateY(0); }
+
+/* 프리 블럭 */
+.school-page .aa-pre {
+    background: #0a0f1e; border: 1px solid var(--sp-border); border-radius: .8rem;
+    padding: .8rem; color: var(--sp-text);
+}
+
+/* 섹션 타이틀/디바이더 */
+.aa-section { display: grid; gap: .75rem; }
+.aa-section__title { font-weight: 700; letter-spacing: .2px; color: var(--sp-text); margin-bottom: .25rem; }
+.aa-divider { height: 1px; background: linear-gradient(90deg, transparent, var(--sp-border), transparent); border: 0; margin: .75rem 0; }
+
+/* 인라인 필드/라벨 */
+.aa-inline-field { display: inline-flex; align-items: center; gap: .5rem; }
+.aa-inline-label { color: var(--sp-muted); font-size: .9rem; }
+
+/* 툴바 버튼 간격 */
+.aa-toolbar .aa-btn + .aa-btn { margin-left: .5rem; }
+
+/* 모션 최소화 모드 */
+@media (prefers-reduced-motion: reduce) {
+    .school-item, .school-page .aa-btn { transition: none; }
+}

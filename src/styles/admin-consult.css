@@ -1,0 +1,15 @@
+/* src/styles/admin-consult.css
+   ------------------------------------------------------------------
+   상담 관리 전용 스킨
+   - 페이지 네임스페이스: .consult-page
+   - 좌측 목록 스크롤: .consult-list-panel
+   ------------------------------------------------------------------ */
+
+.consult-page .consult-list-panel{
+    max-height: calc(100vh - 18rem);
+    overflow: auto;
+}
+
+.consult-page .aa-form-grid-2{
+    gap: .6rem;
+}

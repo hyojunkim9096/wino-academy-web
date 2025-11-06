@@ -1,0 +1,105 @@
+/* src/styles/admin-auth.css
+   ----------------------------------------------------------------------------
+   권한 관리(AdminAuth) 전용 스킨
+   - 좌/우 박스(틀) .auth-box + 내부 헤더/바디
+   - 좌측 역할 리스트/우측 메뉴 트리용 스크롤 컨테이너
+   - 트리 caret(접기/펼치기), 체크박스 액센트 + 행 스타일
+   ---------------------------------------------------------------------------- */
+
+:root{
+    /* admin-system.css 토큰을 우선 사용하되, 미정의일 경우 대비 디폴트 */
+    --aa-border: #1e293b;
+    --aa-panel: #0f172a;
+    --aa-text: #e2e8f0;
+    --aa-muted: #94a3b8;
+    --aa-accent-strong: #4f46e5;
+}
+
+/* 레이아웃 그리드 */
+.auth-split { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+@media (min-width: 768px){
+    .auth-split { grid-template-columns: 4fr 8fr; } /* md: 4:8 */
+}
+@media (min-width: 1024px){
+    .auth-split { grid-template-columns: 3fr 9fr; } /* lg+: 3:9 */
+}
+
+/* 공통 박스 프레임 */
+.auth-box{
+    border: 1px solid var(--aa-border);
+    border-radius: 12px;
+    background: rgba(15,23,42,.45);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+}
+.auth-box-head{
+    display:flex; align-items:center; justify-content:space-between; gap:.5rem;
+    padding: 10px 12px;
+    border-bottom: 1px dashed var(--aa-border);
+}
+.auth-box-title{ font-weight: 600; color: var(--aa-text); }
+.auth-box-subtitle{ font-size: 12px; color: var(--aa-muted); }
+.auth-box-body{ padding: 10px 12px; }
+
+/* 내부 스크롤(역할/트리 공용) */
+.auth-scroll{
+    max-height: calc(100vh - 280px);
+    overflow: auto; padding-right: 4px;
+}
+.auth-scroll::-webkit-scrollbar{ width: 8px; }
+.auth-scroll::-webkit-scrollbar-thumb{ background: rgba(148,163,184,.35); border-radius: 8px; }
+.auth-scroll::-webkit-scrollbar-thumb:hover{ background: rgba(148,163,184,.5); }
+
+/* 역할 리스트(좌측) */
+.auth-role-list{ display:flex; flex-direction:column; gap:6px; }
+.auth-role-item{
+    text-align:left; width:100%;
+    display:grid; grid-template-columns: 1fr auto; align-items:center; gap:6px;
+    padding:8px 10px; border:1px solid rgb(51 65 85); border-radius:8px;
+    background: rgb(30 41 59); color: var(--aa-text); cursor: pointer;
+    transition: background-color .15s ease, border-color .15s ease;
+}
+.auth-role-item:hover{ background: rgb(51 65 85); }
+.auth-role-item.is-active{ background: rgb(2 6 23); border-color: rgb(71 85 105); }
+.auth-role-name{ font-weight: 600; }
+.auth-role-code{ font-size: 12px; color: var(--aa-muted); }
+
+/* 버튼 활성화 표기 */
+.aa-btn.is-active{
+    background: var(--aa-accent-strong);
+    border-color: var(--aa-accent-strong);
+    color: #fff;
+}
+
+/* 메뉴 권한 트리(우측) */
+.auth-tree{ }
+.auth-node{ }
+.auth-node-children{ margin-left: 20px; padding-left:.75rem; border-left:1px solid rgb(30 41 59); }
+
+.auth-node-row{
+    display:grid; grid-template-columns: 20px auto; gap:.35rem; align-items:center;
+}
+
+/* caret(▶/▼) */
+.auth-caret{
+    width:20px; height:20px; display:inline-flex; align-items:center; justify-content:center;
+    border-radius:4px; cursor:pointer; user-select:none;
+    color:#9aa3b2; transition: background-color .15s ease, transform .15s ease;
+}
+.auth-caret:hover{ background: rgba(30,41,59,.45); }
+.auth-caret.disabled{ opacity:.35; cursor: default; }
+.auth-caret .caret{
+    display:inline-block; width:0; height:0;
+    border-top:5px solid transparent; border-bottom:5px solid transparent;
+    border-left:6px solid currentColor; /* ▶ */
+    transform-origin:50% 50%;
+}
+.auth-caret.expanded .caret{ transform: rotate(90deg); } /* ▼ */
+
+/* 체크박스 + 라벨 */
+.auth-check{ accent-color: var(--aa-accent-strong); }
+.auth-label{ display:inline-flex; align-items:center; gap:8px; color: var(--aa-text); }
+.auth-label .name{ }
+.auth-label .type{ font-size:12px; color: var(--aa-muted); }
+
+/* 행 hover 강조 */
+.auth-node-row:hover{ background: rgba(148,163,184,.06); border-radius: 6px; }

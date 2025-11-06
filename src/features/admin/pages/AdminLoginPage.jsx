@@ -1,15 +1,16 @@
 // src/features/admin/pages/AdminLoginPage.jsx
-// -----------------------------------------------------------------------------
-// 로그인 페이지
+// ============================================================================
+// 관리자 로그인 페이지
 // - 세션 종료/킥 사유 메시지: sessionStorage('logoutMessage' | 'kickMsg') 우선
 //   → 없으면 쿼리스트링 ?reason=conflict|locked|expired 으로 백업 표시
-// - 모든 팝업은 alertError 로 통일
-// - 중복 팝업 가드 키('logout:inflight')는 로그인 화면 진입 시 초기화
-// -----------------------------------------------------------------------------
+// - 로그인 성공 시 initSessionAfterLogin() 호출하여 currentAdminId 저장
+// - ?next=/admin/classes 가 있으면 해당 페이지로 이동, 없으면 /admin/dashboard
+// ============================================================================
+
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import AuthLayout from '@/components/layouts/AuthLayout';
-import { login } from '@/api/authApi';
+import { login, initSessionAfterLogin } from '@/api/authApi';
 import { alertError } from '@/ui/alert';
 
 function useQuery() {
@@ -24,7 +25,7 @@ export default function AdminLoginPage() {
     const [form, setForm] = useState({ userId: '', password: '' });
     const [loading, setLoading] = useState(false);
 
-    // ✅ 로그인 화면 진입 시: 세션 종료 메시지 노출(1회)
+    // 로그인 화면 진입 시: 세션 종료 메시지 노출(1회)
     useEffect(() => {
         try {
             // 전역 가드 해제
@@ -53,7 +54,7 @@ export default function AdminLoginPage() {
                 if (msg) Promise.resolve(alertError('알림', msg)).catch(() => {});
             }
         } catch {
-            // sessionStorage 접근 실패 시 무시
+            // storage 접근 실패 시 무시
         }
     }, [query]);
 
@@ -61,7 +62,7 @@ export default function AdminLoginPage() {
 
     const onSubmit = async (e) => {
         e.preventDefault();
-        if (loading) return; // ✅ 이중 제출 방지
+        if (loading) return; // 이중 제출 방지
 
         const userId = (form.userId || '').trim();
         if (!userId) return alertError('입력 오류', '아이디를 입력하세요.');
@@ -69,8 +70,16 @@ export default function AdminLoginPage() {
 
         try {
             setLoading(true);
+
+            // 1) 로그인 (토큰 저장 + Authorization 헤더 설정)
             await login({ userId, password: form.password });
-            navigate('/admin/dashboard'); // 로그인 성공 → 대시보드
+
+            // 2) 세션 초기화 (/auth/me → id 저장 → X-App-User-Id 헤더 반영)
+            await initSessionAfterLogin();
+
+            // 3) next 있으면 그리로, 없으면 대시보드
+            const next = query.get('next');
+            navigate(next || '/admin/dashboard', { replace: true });
         } catch (err) {
             const msg =
                 err?.response?.data?.message ||

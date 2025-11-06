@@ -1,0 +1,68 @@
+/* src/styles/admin-tuition.css
+   ----------------------------------------------------------------------------
+   수강료(카테고리+요금표) 전용 보조 스타일
+   - 좌측 트리: TWO_LEVEL 모드(2열/1열)
+   - 우측 요금표 테이블/액션 푸터
+   - 학생 상세(StudentTuitionTab) 보정은 admin-student.css로 이동(중복 제거)
+   ---------------------------------------------------------------------------- */
+
+.tuition-page .tr-tree {
+    display: grid; grid-template-columns: 1fr 1fr; gap: .75rem;
+}
+/* flat(1뎁스) 모드 */
+.tuition-page .tr-tree.flat { grid-template-columns: 1fr; }
+
+.tuition-page .tr-col { min-height: 200px; }
+.tuition-page .tr-col-title { font-weight: 700; margin-bottom: .5rem; }
+
+.tuition-page .tr-node {
+    display: flex; align-items: center; justify-content: space-between;
+    border: 1px solid var(--aa-border); border-radius: .5rem;
+    background: #0b162f; color: var(--aa-text);
+    padding: .5rem .6rem; margin-bottom: .4rem;
+}
+.tuition-page .tr-node.clickable { cursor: pointer; }
+.tuition-page .tr-node.on { background: rgb(2 6 23); border-color: #475569; }
+
+.tuition-page .tr-label { display:flex; gap:.5rem; align-items:center; }
+.tuition-page .tr-name { font-weight: 600; }
+.tuition-page .tr-code { font-size: .76rem; color: var(--aa-muted); }
+
+.tuition-page .tr-actions { display:flex; align-items:center; gap:.35rem; }
+.tuition-page .tr-reorder .aa-btn { padding: .25rem .45rem; }
+
+/* 편집 배너/구분선 */
+.tuition-page .subject-form-block { margin-top: .9rem; }
+.tuition-page .form-mode-banner {
+    display:flex; gap:.5rem; align-items:center; margin-bottom:.6rem;
+    background:#0b162f; border:1px dashed var(--aa-border); border-radius:.5rem; padding:.4rem .6rem;
+}
+.tuition-page .form-mode-banner .badge{
+    display:inline-block; font-size:.75rem; padding:.1rem .4rem; border-radius:.35rem;
+    background:#334155; color:#e2e8f0; border:1px solid #475569;
+}
+.tuition-page .form-mode-banner .text{ font-size:.9rem; }
+.tuition-page .aa-divider { border: 0; border-top: 1px dashed var(--aa-border); margin: .9rem 0; }
+
+/* 우측 요금표 테이블 */
+.tuition-page .price-actions { display:flex; align-items:center; gap:.5rem; }
+.tuition-page .price-mini-col { width: 120px; }
+.tuition-page .price-col-sm  { width: 160px; }
+.tuition-page .price-col-md  { width: 220px; }
+
+/* 하단 액션(좌: 추가/수정, 우: 정렬 저장) — 한 줄 유지 */
+.tuition-page .actions-footer{
+    display:flex; align-items:center; justify-content:space-between;
+    gap:.75rem; flex-wrap: nowrap;
+}
+.tuition-page .actions-footer .left,
+.tuition-page .actions-footer .right { display:flex; align-items:center; gap:.5rem; }
+/* 좁은 화면에서도 한 줄 유지: 오른쪽 그룹만 가로 스크롤 */
+.tuition-page .actions-footer .right{
+    flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; padding-bottom: 2px;
+}
+
+@media (max-width: 860px){
+    .tuition-page .price-mini-col { width: 100px; }
+    .tuition-page .price-col-sm  { width: 140px; }
+}
