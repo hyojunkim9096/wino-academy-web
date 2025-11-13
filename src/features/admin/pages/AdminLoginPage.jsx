@@ -1,16 +1,17 @@
 // src/features/admin/pages/AdminLoginPage.jsx
 // ============================================================================
 // 관리자 로그인 페이지
-// - 세션 종료/킥 사유 메시지: sessionStorage('logoutMessage' | 'kickMsg') 우선
-//   → 없으면 쿼리스트링 ?reason=conflict|locked|expired 으로 백업 표시
-// - 로그인 성공 시 initSessionAfterLogin() 호출하여 currentAdminId 저장
-// - ?next=/admin/classes 가 있으면 해당 페이지로 이동, 없으면 /admin/dashboard
+// - ✅ [수정] api/authApi
+// - ✅ [수정] useAuth() Context
+// - ✅ [수정] initSessionAfterLogin()  (AuthContext )
 // ============================================================================
 
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import AuthLayout from '@/components/layouts/AuthLayout';
-import { login, initSessionAfterLogin } from '@/api/authApi';
+// ✅ 1. [수정] API
+// import { login, initSessionAfterLogin } from '@/api/authApi';
+import { useAuth } from '@/contexts/AuthContext'; // ✅
 import { alertError } from '@/ui/alert';
 
 function useQuery() {
@@ -22,16 +23,19 @@ export default function AdminLoginPage() {
     const navigate = useNavigate();
     const query = useQuery();
 
+    // ✅ 2. [수정] Context
+    const { login } = useAuth();
+
     const [form, setForm] = useState({ userId: '', password: '' });
     const [loading, setLoading] = useState(false);
 
-    // 로그인 화면 진입 시: 세션 종료 메시지 노출(1회)
+    //
     useEffect(() => {
         try {
-            // 전역 가드 해제
+            //
             sessionStorage.removeItem('logout:inflight');
 
-            // 1) sessionStorage 우선
+            // 1) sessionStorage
             const keys = ['logoutMessage', 'kickMsg'];
             let shown = false;
             for (const k of keys) {
@@ -44,7 +48,7 @@ export default function AdminLoginPage() {
                 }
             }
 
-            // 2) 백업: 쿼리스트링 reason
+            // 2) : reason
             if (!shown) {
                 const reason = (query.get('reason') || '').toLowerCase();
                 let msg = '';
@@ -54,7 +58,7 @@ export default function AdminLoginPage() {
                 if (msg) Promise.resolve(alertError('알림', msg)).catch(() => {});
             }
         } catch {
-            // storage 접근 실패 시 무시
+            // storage
         }
     }, [query]);
 
@@ -62,7 +66,7 @@ export default function AdminLoginPage() {
 
     const onSubmit = async (e) => {
         e.preventDefault();
-        if (loading) return; // 이중 제출 방지
+        if (loading) return; //
 
         const userId = (form.userId || '').trim();
         if (!userId) return alertError('입력 오류', '아이디를 입력하세요.');
@@ -71,13 +75,13 @@ export default function AdminLoginPage() {
         try {
             setLoading(true);
 
-            // 1) 로그인 (토큰 저장 + Authorization 헤더 설정)
+            // ✅ 3. [수정] API  Context
             await login({ userId, password: form.password });
 
-            // 2) 세션 초기화 (/auth/me → id 저장 → X-App-User-Id 헤더 반영)
-            await initSessionAfterLogin();
+            // ✅ 4. [제거] initSessionAfterLogin()
+            // await initSessionAfterLogin();
 
-            // 3) next 있으면 그리로, 없으면 대시보드
+            // 5) next  ,
             const next = query.get('next');
             navigate(next || '/admin/dashboard', { replace: true });
         } catch (err) {
@@ -94,7 +98,7 @@ export default function AdminLoginPage() {
     return (
         <AuthLayout title="WINO Academy" subtitle="관리자 로그인" maxWidth="max-w-md">
             <form onSubmit={onSubmit} className="space-y-5">
-                {/* 아이디 */}
+                {/* */}
                 <div>
                     <label className="mb-1 block text-sm font-medium text-gray-700">아이디</label>
                     <input
@@ -110,7 +114,7 @@ export default function AdminLoginPage() {
                     />
                 </div>
 
-                {/* 비밀번호 */}
+                {/* */}
                 <div>
                     <label className="mb-1 block text-sm font-medium text-gray-700">비밀번호</label>
                     <input
@@ -125,7 +129,7 @@ export default function AdminLoginPage() {
                     />
                 </div>
 
-                {/* 버튼 */}
+                {/* */}
                 <button
                     type="submit"
                     disabled={loading}
@@ -134,7 +138,7 @@ export default function AdminLoginPage() {
                     {loading ? '로그인 중…' : '로그인'}
                 </button>
 
-                {/* 링크 */}
+                {/* */}
                 <div className="flex items-center justify-between text-sm pt-1">
                     <Link className="text-slate-600 hover:underline" to="/admin/forgot-password">
                         비밀번호 찾기

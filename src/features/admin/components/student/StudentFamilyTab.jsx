@@ -1,13 +1,15 @@
-// /src/features/admin/components/student/StudentFamilyTab.jsx
+// src/features/admin/components/student/StudentFamilyTab.jsx
 // ============================================================================
 // StudentFamilyTab — 가족(보호자) 탭 전용(내부 로딩)
 //  - 연결 목록 조회/해제
 //  - 보호자 마스터 검색/연결 (guardianAdminApi)
 //  - 관계코드 셀렉트는 부모가 내려준 familyRelCodes 사용
+//  - ✅ [수정] 계정 연결 상태(loginId) 표시
 // ============================================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
-import Swal from 'sweetalert2';
+// ✅ [수정] confirmDialog
+import { alertError, alertInfo, alertSuccess, confirmDialog } from '@/ui/alert';
 
 import {
     listStudentFamilies, addStudentFamily, removeStudentFamily,
@@ -16,20 +18,21 @@ import {
 import { listFamiliesMaster } from '@/api/guardianAdminApi'; // ✅ 분리 파일에서 export
 
 import Modal from '@/components/ui/Modal';
-import { alertError, alertInfo, alertSuccess } from '@/ui/alert';
+//
 
 const safeInfo  = (t,m)=>Promise.resolve(alertInfo(t,m)).catch(()=>{});
 const safeOk    = (t,m)=>Promise.resolve(alertSuccess(t,m)).catch(()=>{});
 const safeError = (t,m)=>Promise.resolve(alertError(t,m)).catch(()=>{});
 
-const themeColor = '#4f46e5';
-const commonHooks = {
-    willOpen: () => { document.body.classList.add('modal-open'); },
-    didClose: () => { document.body.classList.remove('modal-open'); }
-};
+//
+// const themeColor = '#4f46e5';
+// const commonHooks = {
+//     willOpen: () => { document.body.classList.add('modal-open'); },
+//     didClose: () => { document.body.classList.remove('modal-open'); }
+// };
 
 const sorted = (arr=[]) =>
-    arr.slice().sort((a,b)=>(a.sortOrder??0)-(b.sortOrder??0) || String(a.name).localeCompare(b.name,'ko'));
+    arr.slice().sort((a,b)=>(a.sortOrder??0)-(b.sortOrder??0) || String(a.name).localeCompare(String(b.name),'ko'));
 
 export default function StudentFamilyTab({ studentId, familyRelCodes=[], onChanged }){
     const [familyLinks, setFamilyLinks] = useState([]);
@@ -47,6 +50,7 @@ export default function StudentFamilyTab({ studentId, familyRelCodes=[], onChang
         if(!studentId){ setFamilyLinks([]); return; }
         setLoading(true);
         try{
+            // ✅ API 응답에 userId, loginId가 포함됨
             const fl = await listStudentFamilies(studentId);
             setFamilyLinks(Array.isArray(fl)?fl:(fl?.content||[]));
         }catch{
@@ -62,10 +66,12 @@ export default function StudentFamilyTab({ studentId, familyRelCodes=[], onChang
         setPickLoading(true);
         try{
             const res = await listFamiliesMaster({ keyword: pickKey || undefined, size: 20 });
+            // ✅ API 응답에 userId, loginId가 포함됨
             const rows = Array.isArray(res?.content)?res.content:(Array.isArray(res)?res:[]);
             rows.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko',{sensitivity:'base'}));
             setPickList(rows);
-        }catch{ setPickList([]); }finally{ setPickLoading(false); }
+        }catch{ setPickList([]); }
+        finally{ setPickLoading(false); }
     };
 
     const onLinkFamily = async (family)=>{
@@ -91,11 +97,12 @@ export default function StudentFamilyTab({ studentId, familyRelCodes=[], onChang
 
     const onUnlinkFamily = async (link)=>{
         if (!studentId || !link?.id) return;
-        const ok = await Swal.fire({
-            title:'확인', text:'해당 가족 연결을 해제할까요?',
-            showCancelButton:true, confirmButtonText:'확인', cancelButtonText:'취소',
-            confirmButtonColor:themeColor, reverseButtons:true, ...commonHooks
-        }).then(r=>r.isConfirmed);
+        // ✅ [수정] confirmDialog
+        const ok = await confirmDialog(
+            '확인',
+            '해당 가족 연결을 해제할까요?',
+            { confirmText: '확인', cancelText: '취소' }
+        );
         if(!ok) return;
         try{
             await removeStudentFamily(studentId, link.id);
@@ -118,6 +125,8 @@ export default function StudentFamilyTab({ studentId, familyRelCodes=[], onChang
                     <tr>
                         <th style={{width:110}}>관계</th>
                         <th>이름</th>
+                        {/* ✅ [신규] 계정 연결 컬럼 */}
+                        <th>계정(ID)</th>
                         <th>연락처</th>
                         <th>이메일</th>
                         <th style={{width:110}}>수신</th>
@@ -125,14 +134,22 @@ export default function StudentFamilyTab({ studentId, familyRelCodes=[], onChang
                     </tr>
                     </thead>
                     <tbody>
-                    {loading && <tr><td colSpan={6}>불러오는 중…</td></tr>}
+                    {loading && <tr><td colSpan={7}>불러오는 중…</td></tr>}
                     {!loading && familyLinks.length===0 && (
-                        <tr><td colSpan={6}>연결된 가족이 없습니다.</td></tr>
+                        <tr><td colSpan={7}>연결된 가족이 없습니다.</td></tr>
                     )}
                     {familyLinks.map(g=>(
                         <tr key={g.id}>
                             <td>{g.relationCode}</td>
                             <td>{g.guardianName || '-'}</td>
+                            {/* ✅ [신규] 계정 ID 표시 */}
+                            <td>
+                                {g.loginId ? (
+                                    <span className="aa-badge aa-badge--ok">{g.loginId}</span>
+                                ) : (
+                                    <span className="aa-badge aa-badge--muted">미연결</span>
+                                )}
+                            </td>
                             <td>{g.guardianPhone || '-'}</td>
                             <td>{g.guardianEmail || '-'}</td>
                             <td className="text-sm">
@@ -172,8 +189,9 @@ export default function StudentFamilyTab({ studentId, familyRelCodes=[], onChang
                                 <thead>
                                 <tr>
                                     <th>이름</th>
+                                    {/* ✅ [신규] 계정 연결 컬럼 */}
+                                    <th>계정(ID)</th>
                                     <th>연락처</th>
-                                    <th>이메일</th>
                                     <th style={{width:80}}></th>
                                 </tr>
                                 </thead>
@@ -184,8 +202,15 @@ export default function StudentFamilyTab({ studentId, familyRelCodes=[], onChang
                                 {pickList.map(f=>(
                                     <tr key={f.id}>
                                         <td>{f.name}</td>
+                                        {/* ✅ [신규] 계정 ID 표시 */}
+                                        <td>
+                                            {f.loginId ? (
+                                                <span className="aa-badge aa-badge--ok">{f.loginId}</span>
+                                            ) : (
+                                                <span className="aa-badge aa-badge--muted">미연결</span>
+                                            )}
+                                        </td>
                                         <td>{f.phone || '-'}</td>
-                                        <td>{f.email || '-'}</td>
                                         <td><button className="aa-btn aa-btn-primary aa-btn-sm" onClick={()=>onLinkFamily(f)}>연결</button></td>
                                     </tr>
                                 ))}

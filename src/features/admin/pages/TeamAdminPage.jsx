@@ -4,7 +4,6 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import {
     listTeams,
     getTeam,
-    // createTeam,  // ✅ 모달 내부에서 처리 → 불필H하여 제거
     updateTeam,
     deleteTeam,
     addTeamMember,
@@ -13,17 +12,21 @@ import {
     setTeamLeader,
 } from '@/api/teamApi';
 import { listStaffs } from '@/api/staffApi';
-import { getCodes } from '@/api/commonCodeAdminApi';
+// ✅ 1. getCodes
+// import { getCodes } from '@/api/commonCodeAdminApi';
 import { alertError, alertSuccess, confirm } from '@/ui/alert';
 
-import TeamCreateModal from '@/features/admin/components/team/TeamCreateModal'; // ✅ 새 팀 생성 모달
+import TeamCreateModal from '@/features/admin/components/team/TeamCreateModal';
 
-// 전역/페이지 공통 스타일
-import '@/styles/admin-system.css'; // ✅ .aa-seg 스타일이 여기 있습니다.
+// ✅ 2.
+import { useCommonCodes } from '@/contexts/CommonCodeContext';
+
+//
+import '@/styles/admin-system.css';
 import '@/styles/admin-team.css';
 
 // ────────────────────────────────────────────────────────────────────────────
-// (공용) 작은 모달 컴포넌트: 구성원 추가에 사용
+// (공용)
 // ────────────────────────────────────────────────────────────────────────────
 function SimpleModal({ open, title, onClose, children }) {
     if (!open) return null;
@@ -43,7 +46,7 @@ function SimpleModal({ open, title, onClose, children }) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// ✅ [요청] 직원 유형(STAFF/TEACHER) 필터 옵션
+// ✅ [요청]
 // ────────────────────────────────────────────────────────────────────────────
 const EMP_TYPES = [
     { code: '', name: '전체' },      //
@@ -52,8 +55,8 @@ const EMP_TYPES = [
 ];
 
 /**
- * ✅ [요청] 직원 유형 필터 UI 컴포넌트
- * admin-system.css의 .aa-seg 스타일을 사용합니다.
+ * ✅ [요청]
+ * admin-system.css .aa-seg .
  */
 function EmpTypeFilter({ value, onChange }) {
     return (
@@ -72,14 +75,14 @@ function EmpTypeFilter({ value, onChange }) {
 }
 
 
-// 상태 필터 옵션
+//
 const STATUS = [
     { code: 'ALL', name: '전체' },
     { code: 'ACTIVE', name: '활성' },
     { code: 'INACTIVE', name: '비활성' },
 ];
 
-// 유틸
+//
 const toMap = (arr = []) =>
     Object.fromEntries(arr.map((x) => [String(x.code).toUpperCase(), x]));
 const sortByName = (arr = []) =>
@@ -92,16 +95,17 @@ const sortByName = (arr = []) =>
         );
 
 export default function TeamAdminPage() {
-    // 좌측 필터 상태
-    const [workLoc, setWorkLoc] = useState(''); // 관 코드(전체/공용은 빈 문자열)
+    //
+    const [workLoc, setWorkLoc] = useState(''); //
     const [status, setStatus] = useState('ALL');
     const [keyword, setKeyword] = useState('');
-    const [kwDeb, setKwDeb] = useState(''); // 검색어 디바운스 값
+    const [kwDeb, setKwDeb] = useState(''); //
 
-    // 공통코드: 관 목록
+    // ✅ 3.
+    const { codes: rawLocCodes, codeLoading } = useCommonCodes('WORK_LOCATION');
     const [locCodes, setLocCodes] = useState([]);
 
-    // 목록/페이징/선택
+    //
     const [list, setList] = useState([]);
     const [page, setPage] = useState(0);
     const [size, setSize] = useState(20);
@@ -109,41 +113,37 @@ export default function TeamAdminPage() {
     const [selectedId, setSelectedId] = useState(null);
     const [loading, setLoading] = useState(false);
 
-    // 상세/편집
+    //
     const [detail, setDetail] = useState(null);
     const [edit, setEdit] = useState(null);
     const [editing, setEditing] = useState(false);
     const [saving, setSaving] = useState(false);
 
-    // 구성원 추가 모달
+    //
     const [mOpen, setMOpen] = useState(false);
     const [mKw, setMKw] = useState('');
-    const [mEmpType, setMEmpType] = useState(''); // ✅ [요청] 구성원 모달용 직원 유형 필터 상태
+    const [mEmpType, setMEmpType] = useState(''); // ✅ [요청]
     const [mRes, setMRes] = useState([]);
     const mDebRef = useRef(null);
 
-    // 새 팀 생성 모달
+    //
     const [createOpen, setCreateOpen] = useState(false);
 
-    // ── 공통코드 로딩: WORK_LOCATION ───────────────────────────────────────
+    // ──  WORK_LOCATION ───────────────────────────────────────
+    // ✅ 4. API
     useEffect(() => {
-        (async () => {
-            try {
-                const workLocs = await getCodes('WORK_LOCATION');
-                setLocCodes(sortByName(workLocs || []));
-            } catch {
-                // 코드 실패해도 화면은 동작
-            }
-        })();
-    }, []);
+        if (!codeLoading) {
+            setLocCodes(sortByName(rawLocCodes || []));
+        }
+    }, [codeLoading, rawLocCodes]);
 
-    // ── 검색어 디바운스 ──────────────────────────────────────────────────
+    // ──  ──────────────────────────────────────────────────
     useEffect(() => {
         const t = setTimeout(() => setKwDeb(keyword.trim()), 300);
         return () => clearTimeout(t);
     }, [keyword]);
 
-    // ── 목록 로드 ────────────────────────────────────────────────────────
+    // ──  ────────────────────────────────────────────────────────
     const loadList = useCallback(
         async (keepSelection = false) => {
             setLoading(true);
@@ -161,7 +161,7 @@ export default function TeamAdminPage() {
                     totalElements: res?.totalElements ?? 0,
                     totalPages: res?.totalPages ?? 1,
                 });
-                // keepSelection=false면 첫 항목 자동 선택
+                // keepSelection=false
                 if (!keepSelection) setSelectedId(rows[0]?.id ?? null);
             } catch (e) {
                 setList([]);
@@ -177,7 +177,7 @@ export default function TeamAdminPage() {
         loadList(false);
     }, [loadList]);
 
-    // ── 상세 로드 ────────────────────────────────────────────────────────
+    // ──  ────────────────────────────────────────────────────────
     useEffect(() => {
         if (!selectedId) {
             setDetail(null);
@@ -199,30 +199,30 @@ export default function TeamAdminPage() {
         })();
     }, [selectedId]);
 
-    // ── 새 팀 생성: 전용 모달 오픈 ────────────────────────────────────────
+    // ──  ────────────────────────────────────────
     const openCreateModal = () => {
         setCreateOpen(true);
     };
 
-    // 새 팀 생성 완료 콜백(모달에서 호출)
+    //
     const handleCreated = async (newTeamId) => {
-        // 1) 첫 페이지로 이동
+        // 1)
         setPage(0);
-        // 2) 목록 재조회
+        // 2)
         await loadList(false);
-        // 3) 방금 생성한 팀을 선택
+        // 3)
         if (newTeamId) setSelectedId(newTeamId);
     };
 
-    // ── 저장(상세 편집 저장) ────────────────────────────────────────────
+    // ── ( ) ────────────────────────────────────────────
     const onSave = async () => {
         if (!selectedId || !edit) return;
 
         const payload = {
-            // teamCode는 수정 시 제외 (고유값)
+            // teamCode
             teamName: (edit.teamName || '').trim(),
             description: edit.description || null,
-            workLocation: edit.workLocation || null, // 빈 값이면 공용
+            workLocation: edit.workLocation || null, //
             status: edit.status || 'ACTIVE',
             leaderAdminId: edit.leaderAdminId || null,
         };
@@ -236,7 +236,7 @@ export default function TeamAdminPage() {
             setEdit(toEditModel(d));
             setEditing(false);
             await alertSuccess('성공', '저장되었습니다.');
-            await loadList(true); // 목록 리프레시 (선택 유지)
+            await loadList(true); //
         } catch (e) {
             alertError('오류', e?.response?.data?.message || '저장 실패');
         } finally {
@@ -244,7 +244,7 @@ export default function TeamAdminPage() {
         }
     };
 
-    // ── 삭제 ─────────────────────────────────────────────────────────────
+    // ──  ─────────────────────────────────────────────────────────────
     const onDelete = async () => {
         if (!selectedId) return;
         const ok = await confirm('삭제 확인', '이 팀을 삭제하시겠습니까? 구성원도 함께 제거됩니다.');
@@ -259,23 +259,23 @@ export default function TeamAdminPage() {
         }
     };
 
-    // ── 구성원 추가 모달 오픈 ───────────────────────────────────────────
+    // ──  ───────────────────────────────────────────
     const openMemberModal = () => {
         setMKw('');
-        setMEmpType(''); // ✅ [요청] 모달 열 때 필터 초기화
+        setMEmpType(''); // ✅ [요청]
         setMRes([]);
         setMOpen(true);
     };
 
-    // ── 구성원 검색(직원/강사, 디바운스) ────────────────────────────────
+    // ── (/, ) ────────────────────────────────
     useEffect(() => {
         if (!mOpen) return;
         if (mDebRef.current) clearTimeout(mDebRef.current);
         mDebRef.current = setTimeout(async () => {
             try {
                 const res = await listStaffs({
-                    workLocation: edit?.workLocation || undefined, // 현재 팀의 관 기준으로 우선 검색
-                    employeeType: mEmpType || undefined, // ✅ [요청] 직원 유형 파라미터 추가
+                    workLocation: edit?.workLocation || undefined, //
+                    employeeType: mEmpType || undefined, // ✅ [요청]
                     keyword: mKw || undefined,
                     page: 0,
                     size: 20,
@@ -291,15 +291,15 @@ export default function TeamAdminPage() {
             }
         }, 250);
         return () => clearTimeout(mDebRef.current);
-        // ✅ [요청] mEmpType이 변경될 때도 검색 실행
+        // ✅ [요청] mEmpType
     }, [mKw, mEmpType, mOpen, edit?.workLocation]);
 
-    // ── 구성원 추가/수정/삭제/팀장지정 ─────────────────────────────────
+    // ── /// ─────────────────────────────────
     const addMemberAction = async (adminId, role = 'MEMBER') => {
         try {
             await addTeamMember(selectedId, { adminId, roleInTeam: role });
             await refreshDetail();
-            await loadList(true); // ✅ 좌측 목록 새로고침
+            await loadList(true); // ✅
             setMOpen(false);
             await alertSuccess('성공', '구성원이 추가되었습니다.');
         } catch (e) {
@@ -322,7 +322,7 @@ export default function TeamAdminPage() {
         try {
             await updateTeamMember(selectedId, m.id, patch);
             await refreshDetail();
-            await loadList(true); // ✅ 좌측 목록 새로고침
+            await loadList(true); // ✅
         } catch (e) {
             alertError('오류', e?.response?.data?.message || '구성원 수정 실패');
         }
@@ -334,13 +334,13 @@ export default function TeamAdminPage() {
         try {
             await removeTeamMember(selectedId, m.id);
             await refreshDetail();
-            await loadList(true); // ✅ 좌측 목록 새로고침
+            await loadList(true); // ✅
         } catch (e) {
             alertError('오류', e?.response?.data?.message || '구성원 삭제 실패');
         }
     };
 
-    // (버그 수정) refreshDetail 함수 (수정 중 상태 덮어쓰기 방지)
+    // ( ) refreshDetail ( )
     const refreshDetail = async () => {
         if (!selectedId) return;
         try {
@@ -366,14 +366,14 @@ export default function TeamAdminPage() {
         }
     };
 
-    // ── 헬퍼 함수 ───────────────────────────────────────────────────────
+    // ──  ───────────────────────────────────────────────────────
 
-    // ✅ 관 코드 -> 이름 변환 맵
+    // ✅  ->
     const locMap = useMemo(() => toMap(locCodes), [locCodes]);
     const locName = (code) =>
         locMap[String(code || '').toUpperCase()]?.name || code || '전체';
 
-    // ✅ 상태 코드 -> 이름 변환
+    // ✅  ->
     const statusName = (code) => {
         if (code === 'ACTIVE') return '활성';
         if (code === 'INACTIVE') return '비활성';
@@ -387,7 +387,7 @@ export default function TeamAdminPage() {
 
                 <div className="ta-grid">
                     {/* ─────────────────────────────────────────────
-              좌측: 목록/필터
+              /
           ───────────────────────────────────────────── */}
                     <aside className="ta-left">
                         <div className="ta-panel">
@@ -399,6 +399,7 @@ export default function TeamAdminPage() {
                                     onChange={(e) => setWorkLoc(e.target.value)}
                                 >
                                     <option value="">전체</option>
+                                    {/* ✅ 5.  */}
                                     {(locCodes || []).map((l) => (
                                         <option key={l.code} value={l.code}>
                                             {l.name} ({l.code})
@@ -453,7 +454,7 @@ export default function TeamAdminPage() {
                                         >
                                             <div className="ta-item-name">{item.teamName}</div>
                                             <div className="ta-item-sub">
-                                                {/* ✅ 소속관 이름 표시 */}
+                                                {/* ✅  */}
                                                 {locName(item.workLocation)} ·{' '}
                                                 {item.leaderName
                                                     ? `팀장 ${item.leaderName}`
@@ -487,7 +488,7 @@ export default function TeamAdminPage() {
                     </aside>
 
                     {/* ─────────────────────────────────────────────
-              우측: 상세/편집 + 멤버
+              / +
           ───────────────────────────────────────────── */}
                     <main className="ta-right">
                         {!detail && (
@@ -534,7 +535,7 @@ export default function TeamAdminPage() {
                                     </div>
                                 </div>
 
-                                {/* 기본 정보 편집 영역 */}
+                                {/* */}
                                 <div className="ta-grid2">
                                     <Field label="팀명">
                                         {!editing ? (
@@ -550,7 +551,7 @@ export default function TeamAdminPage() {
                                         )}
                                     </Field>
 
-                                    {/* 팀 코드 수정 시 readOnly 처리 */}
+                                    {/* readOnly */}
                                     <Field label="팀 코드">
                                         {!editing ? (
                                             <RO>{detail.teamCode || '-'}</RO>
@@ -585,6 +586,7 @@ export default function TeamAdminPage() {
                                                 }
                                             >
                                                 <option value="">전체/공용</option>
+                                                {/* ✅ 5.  */}
                                                 {(locCodes || []).map((l) => (
                                                     <option key={l.code} value={l.code}>
                                                         {l.name} ({l.code})
@@ -594,7 +596,7 @@ export default function TeamAdminPage() {
                                         )}
                                     </Field>
 
-                                    {/* 상태 표시 형식 변경 */}
+                                    {/* */}
                                     <Field label="상태">
                                         {!editing ? (
                                             <RO>{statusName(detail.status)} ({detail.status})</RO>
@@ -616,6 +618,7 @@ export default function TeamAdminPage() {
                                         {!editing ? (
                                             <RO>{detail.leaderName || '-'}</RO>
                                         ) : (
+                                            //
                                             <input
                                                 className="ta-input"
                                                 value={edit.leaderName || ''}
@@ -640,7 +643,7 @@ export default function TeamAdminPage() {
                                     </Field>
                                 </div>
 
-                                {/* 구성원 섹션 */}
+                                {/* */}
                                 <div className="ta-section">
                                     <div className="ta-section-head">
                                         <div className="ta-section-title">구성원</div>
@@ -651,12 +654,13 @@ export default function TeamAdminPage() {
                                         </div>
                                     </div>
 
+                                    {/* ✅ [ 6] CSS   . */}
                                     <div className="ta-members">
                                         {(detail.members || []).map((m) => (
                                             <div key={m.id} className="ta-member">
                                                 <div className="ta-member-info">
                                                     <div className="ta-member-name">{m.userName}</div>
-                                                    {/* ✅ [수정] 구성원 목록의 관 코드 -> 이름으로 변경 */}
+                                                    {/* ✅ [수정]  ->  */}
                                                     <div className="ta-member-sub">
                                                         {locName(m.workLocation)} · 참여 {fmtDate(m.joinedAt)}
                                                         {m.leftAt ? ` ~ ${fmtDate(m.leftAt)}` : ''}
@@ -664,8 +668,8 @@ export default function TeamAdminPage() {
                                                 </div>
                                                 <div className="ta-member-ops">
 
-                                                    {/* ✅ [요청 1] 역할(MEMBER/LEADER) <select> 제거 */}
-                                                    {/* "팀장지정" 버튼으로 역할을 관리합니다. */}
+                                                    {/* ✅ [ 1] (MEMBER/LEADER) <select>  */}
+                                                    {/* ""  . */}
 
                                                     <select
                                                         className="ta-select"
@@ -704,10 +708,10 @@ export default function TeamAdminPage() {
                 </div>
             </div>
 
-            {/* 구성원 추가 모달 */}
+            {/* */}
             <SimpleModal open={mOpen} title="구성원 추가" onClose={() => setMOpen(false)}>
 
-                {/* ✅ [요청] 직원 유형 필터 UI 추가 */}
+                {/* ✅ [요청]  UI  */}
                 <EmpTypeFilter value={mEmpType} onChange={setMEmpType} />
 
                 <div className="ta-modal-field">
@@ -725,7 +729,7 @@ export default function TeamAdminPage() {
                                 <div className="ta-modal-item-name">
                                     {u.userName} <span className="ta-mono">({u.userId})</span>
                                 </div>
-                                {/* ✅ [수정] 구성원 추가 모달의 관 코드 -> 이름으로 변경 */}
+                                {/* ✅ [수정]   ->  */}
                                 <div className="ta-modal-item-sub">
                                     {locName(u.workLocation)} · {u.email || u.phoneNumber || '-'}
                                 </div>
@@ -754,14 +758,14 @@ export default function TeamAdminPage() {
                 </div>
             </SimpleModal>
 
-            {/* 새 팀 생성 모달 */}
+            {/* */}
             <TeamCreateModal
                 open={createOpen}
                 onClose={() => setCreateOpen(false)}
                 locCodes={locCodes}
                 defaultWorkLoc={workLoc}
                 onCreated={handleCreated}
-                // ✅ [요청] EmpTypeFilter 컴포넌트 전달
+                // ✅ [요청] EmpTypeFilter
                 EmpTypeFilter={EmpTypeFilter}
             />
         </section>
@@ -769,7 +773,7 @@ export default function TeamAdminPage() {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// 소형 필드 컴포넌트
+//
 // ────────────────────────────────────────────────────────────────────────────
 function Field({ label, children }) {
     return (
@@ -780,12 +784,12 @@ function Field({ label, children }) {
     );
 }
 
-// 읽기 전용 박스
+//
 function RO({ children }) {
     return <div className="ta-ro">{children ?? '-'}</div>;
 }
 
-// 상세 → 편집 모델 변환
+//  →
 function toEditModel(d) {
     if (!d) return null;
     return {
@@ -799,7 +803,7 @@ function toEditModel(d) {
     };
 }
 
-// 날짜 포맷(yyyy-MM-dd HH:mm:ss까지)
+// (yyyy-MM-dd HH:mm:ss)
 function fmtDate(s) {
     if (!s) return '-';
     try {

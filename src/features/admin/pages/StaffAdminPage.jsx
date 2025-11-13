@@ -1,23 +1,8 @@
 // src/features/admin/pages/StaffAdminPage.jsx
-// 직원 관리 화면
-// - 좌측 목록: 이름 오름차순 정렬
-// - 우측 상세: 아바타 클릭 시 이미지 확대 모달
-// - 검색 디바운스, 저장/업로드 후 목록/상세 동기화
-// - ✅ 구분(EmployeeType: STAFF/TEACHER) 수정 가능
-// - ✅ 사진 경로 처리: photoUrl 우선, 없으면 photoPath → /uploads/** 로 변환
-// - ✅ 캐시버스터로 업로드 직후 새 이미지 보장
-// - ✅ 주소 필드(postalCode/address/detailAddress) 표시 및 편집
-// - ✅ 편집 모드에서만 "우편번호 검색" 버튼 노출
-// - ✅ employeeType=ALL 은 목록 API 쿼리에서 제외 (백엔드 Enum 변환 오류 예방)
-// - ✅ AddressSearch 개선 대응: children 대신 buttonLabel 사용
-// - ✅ 비상 연락처 필드(emergencyContact) 바인딩 오류 수정
-// - ✅ 스타일/레이아웃: admin-system.css 먼저, 페이지 전용 CSS 이후
-// - ✅ 칩 선택 표시/목록 선택 하이라이트/라벨 줄바꿈 보정/목록 파싱 버그 수정
-// - ✅ Modal.jsx(v2) 대응: 모달 폭은 size 프리셋(sm/md/lg/xl/2xl/full) 사용
-
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { listStaffs, getStaff, updateStaff, changeStaffPassword, uploadStaffPhoto } from '@/api/staffApi';
-import { getCodes } from '@/api/commonCodeAdminApi';
+// ✅ 1. getCodes
+// import { getCodes } from '@/api/commonCodeAdminApi';
 import { alertError, alertInfo, alertSuccess } from '@/ui/alert';
 import Modal from '@/components/ui/Modal';
 import Avatar from '@/components/ui/Avatar';
@@ -25,11 +10,14 @@ import { useImagePreview } from '@/components/ui/ImagePreview';
 import { uploadsUrl, withBust } from '@/utils/mediaUrl';
 import AddressSearch from '@/components/AddressSearch';
 
-// ✅ 시스템 토큰/베이스를 먼저 로드
+// ✅ 2.
+import { useCommonCodes } from '@/contexts/CommonCodeContext';
+
+//
 import '@/styles/admin-system.css';
 import '@/styles/admin-shared.css';
 import '@/styles/admin-staff.css';
-// (선택) 범용 admin 유틸
+// (선택)
 import '@/styles/admin.css';
 
 const safeInfo  = (t,m)=>Promise.resolve(alertInfo(t,m)).catch(()=>{});
@@ -42,15 +30,11 @@ const EMP_TYPES = [
     { key: 'STAFF',   label: '직원' },
 ];
 
-// 유틸: 코드배열 → Map, 정렬
+// /
 const toMap  = (arr=[]) => Object.fromEntries(arr.map(x => [String(x.code).trim().toUpperCase(), x]));
 const sorted = (arr=[]) => arr.slice().sort((a,b)=>(a.sortOrder??0)-(b.sortOrder??0) || String(a.name).localeCompare(b.name,'ko'));
 
-/** 사진 URL 계산
- * 1) 서버 DTO가 photoUrl을 주면 그대로 사용
- * 2) 아니면 photoPath(절대/상대 모두 허용) → /uploads/** 로 변환
- * 3) 둘 다 없으면 '' (Avatar(fileId) 처리에 위임)
- */
+/** */
 function buildPhotoSrc(row){
     if (!row) return '';
     if (row.photoUrl)  return row.photoUrl;
@@ -59,74 +43,77 @@ function buildPhotoSrc(row){
 }
 
 export default function StaffAdminPage() {
-    // ===== 필터 =====
+    // =====  =====
     const [empType, setEmpType]   = useState('ALL');
     const [workLoc, setWorkLoc]   = useState('');
     const [keyword, setKeyword]   = useState('');
     const [kwDebounced, setKwDebounced] = useState('');
 
-    // ===== 공통코드 =====
-    const [roleCodes,   setRoleCodes]   = useState([]);
-    const [statusCodes, setStatusCodes] = useState([]);
-    const [locCodes,    setLocCodes]    = useState([]);
+    // =====  =====
+    // ✅ 3. API  useCommonCodes
+    const { codes: roleCodes,   codeLoading: roleLoading }   = useCommonCodes('ROLE');
+    const { codes: statusCodes, codeLoading: statusLoading } = useCommonCodes('ACCOUNT_STATUS');
+    const { codes: locCodes,    codeLoading: locLoading }    = useCommonCodes('WORK_LOCATION');
+
     const roleMap   = useMemo(()=>toMap(roleCodes),   [roleCodes]);
     const statusMap = useMemo(()=>toMap(statusCodes), [statusCodes]);
     const locMap    = useMemo(()=>toMap(locCodes),    [locCodes]);
 
-    // ===== 목록/상세 =====
+    // ===== / =====
     const [list, setList]           = useState([]);
     const [loading, setLoading]     = useState(false);
     const [selectedId, setSelectedId] = useState(null);
 
-    // ===== 상세/편집 =====
+    // ===== / =====
     const [detail, setDetail]   = useState(null);
     const [edit, setEdit]       = useState(null);
     const [editing, setEditing] = useState(false);
     const [saving, setSaving]   = useState(false);
 
-    // ===== 비밀번호 모달 =====
+    // =====  =====
     const [pwOpen, setPwOpen]   = useState(false);
     const [pwForm, setPwForm]   = useState({ pw:'', pw2:'' });
     const [pwSaving, setPwSaving] = useState(false);
 
-    // ===== 이미지 캐시버스팅 & 미리보기 =====
+    // =====  &  =====
     const [imgVersion, setImgVersion] = useState(0);
     const { openPreview, PreviewPortal } = useImagePreview(imgVersion);
 
-    // === 공통코드 로드 ===
-    useEffect(() => {
-        let alive = true;
-        (async () => {
-            try {
-                const [r, s, w] = await Promise.all([
-                    getCodes('ROLE'),
-                    getCodes('ACCOUNT_STATUS'),
-                    getCodes('WORK_LOCATION'),
-                ]);
-                if (!alive) return;
-                setRoleCodes(sorted(r||[]));
-                setStatusCodes(sorted(s||[]));
-                setLocCodes(sorted(w||[]));
-            } catch (e) {
-                safeError('오류', '공통코드 조회 실패');
-            }
-        })();
-        return ()=>{ alive=false; };
-    }, []);
+    // ===  ===
+    // ✅ 4. API
+    // useEffect(() => {
+    //     let alive = true;
+    //     (async () => {
+    //         try {
+    //             const [r, s, w] = await Promise.all([
+    //                 getCodes('ROLE'),
+    //                 getCodes('ACCOUNT_STATUS'),
+    //                 getCodes('WORK_LOCATION'),
+    //             ]);
+    //             if (!alive) return;
+    //             setRoleCodes(sorted(r||[]));
+    //             setStatusCodes(sorted(s||[]));
+    //             setLocCodes(sorted(w||[]));
+    //         } catch (e) {
+    //             safeError('오류', '공통코드 조회 실패');
+    //         }
+    //     })();
+    //     return ()=>{ alive=false; };
+    // }, []);
 
-    // === 검색 디바운스 ===
+    // ===  ===
     useEffect(() => {
         const t = setTimeout(() => setKwDebounced(keyword.trim()), 300);
         return () => clearTimeout(t);
     }, [keyword]);
 
-    // === 목록 로드 ===
+    // ===  ===
     const inflight = useRef(0);
     const loadList = useCallback(async (keepSelection=false) => {
         setLoading(true);
         const my = ++inflight.current;
         try {
-            // ⭐ 'ALL'이면 employeeType 파라미터 제외(백엔드 Enum 바인딩 오류 방지)
+            // ⭐ 'ALL'
             const res = await listStaffs({
                 employeeType: empType === 'ALL' ? undefined : empType,
                 workLocation: workLoc || undefined,
@@ -136,7 +123,7 @@ export default function StaffAdminPage() {
 
             if (my !== inflight.current) return;
 
-            // ✅ 목록 파싱 안전화 (페이지형/배열형 모두 지원)
+            // ✅ (/)
             const rows =
                 Array.isArray(res?.content) ? res.content :
                     (Array.isArray(res) ? res : []);
@@ -154,11 +141,12 @@ export default function StaffAdminPage() {
         }
     }, [empType, workLoc, kwDebounced]);
 
-    // === 필터 변경 시 목록 새로고침 ===
+    // ===   ===
     useEffect(() => { loadList(false); }, [loadList]);
 
-    // === 편집용 모델 변환 ===
-    const toEdit = (d) => ({
+    // ===   ===
+    // ✅ 5. locCodes
+    const toEdit = useCallback((d) => ({
         userName:         d?.userName ?? '',
         email:            d?.email ?? '',
         phoneNumber:      d?.phoneNumber ?? '',
@@ -166,15 +154,15 @@ export default function StaffAdminPage() {
         roleCode:         d?.roleCode ?? 'ROLE_STAFF',
         workLocation:     d?.workLocation ?? (locCodes[0]?.code ?? ''),
         status:           d?.status ?? 'TEMPORARY',
-        // ✅ 예외값 방지: employeeType 기본값 보정
+        // ✅ : employeeType
         employeeType:     (d?.employeeType === 'TEACHER' || d?.employeeType === 'STAFF') ? d.employeeType : 'STAFF',
-        // 주소
+        //
         postalCode:       d?.postalCode ?? '',
         address:          d?.address ?? '',
         detailAddress:    d?.detailAddress ?? '',
-    });
+    }), [locCodes]); // ✅ locCodes
 
-    // === 상세 로드 (선택/업로드 후) ===
+    // ===  ( / ) ===
     useEffect(() => {
         if (!selectedId) { setDetail(null); setEdit(null); setEditing(false); return; }
         let alive = true;
@@ -183,16 +171,19 @@ export default function StaffAdminPage() {
                 const d = await getStaff(selectedId);
                 if (!alive) return;
                 setDetail(d);
-                setEdit(toEdit(d));
+                // ✅ 6.
+                if (!locLoading && !statusLoading) {
+                    setEdit(toEdit(d));
+                }
                 setEditing(false);
             } catch (e) {
                 setDetail(null); setEdit(null); setEditing(false);
             }
         })();
         return ()=>{ alive=false; };
-    }, [selectedId, imgVersion]); // 이미지 갱신 시에도 재조회
+    }, [selectedId, imgVersion, locLoading, statusLoading, toEdit]); // ✅ toEdit
 
-    // === 저장 ===
+    // ===  ===
     const onSave = async () => {
         if (!selectedId || !edit) return;
         setSaving(true);
@@ -221,15 +212,15 @@ export default function StaffAdminPage() {
         } finally { setSaving(false); }
     };
 
-    // === 이미지 업로드 ===
+    // ===  ===
     const onUploadPhoto = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
         try {
             await uploadStaffPhoto(selectedId, file);
-            setImgVersion(v => v + 1);              // ✅ 캐시버스팅
-            await loadList(true);                    // 좌측 목록 동기화
-            const d = await getStaff(selectedId);    // 우측 상세 동기화
+            setImgVersion(v => v + 1);              // ✅
+            await loadList(true);                    //
+            const d = await getStaff(selectedId);    //
             setDetail(d);
             setEdit(toEdit(d));
             await safeOk('성공', '사진이 변경되었습니다.');
@@ -244,13 +235,13 @@ export default function StaffAdminPage() {
     function pickName(map, code){ return map[String(code||'').toUpperCase()]?.name || code || '-'; }
 
     return (
-        // ✅ staff-page 클래스로 칩 테마/보조 스타일 활성화 (admin-staff.css 내부 .staff-page … 선택자)
+        // ✅ staff-page   (admin-staff.css .staff-page … )
         <section className="aa-page staff-page">
             <div className="aa-container">
                 <h1 className="aa-title" style={{marginTop:'0.5rem'}}>직원 관리</h1>
 
                 <div className="grid grid-cols-12 gap-4" style={{marginTop:'0.5rem'}}>
-                    {/* 좌측 3/4 */}
+                    {/* 3/4 */}
                     <div className="col-span-12 md:col-span-4 lg:col-span-3">
                         <FilterPanel
                             empType={empType} setEmpType={setEmpType}
@@ -268,7 +259,7 @@ export default function StaffAdminPage() {
                         />
                     </div>
 
-                    {/* 우측 9/8 */}
+                    {/* 9/8 */}
                     <div className="col-span-12 md:col-span-8 lg:col-span-9">
                         <DetailPanel
                             detail={detail}
@@ -296,9 +287,9 @@ export default function StaffAdminPage() {
                 </div>
             </div>
 
-            {/* 비밀번호 변경 모달 */}
+            {/* */}
             {pwOpen && (
-                // ✅ Modal.jsx(v2) 대응: 폭은 size 프리셋으로 지정 (sm)
+                // ✅ Modal.jsx(v2) :  (sm)
                 <Modal onClose={()=>setPwOpen(false)} title="비밀번호 변경" size="sm">
                     <PasswordModal
                         pwForm={pwForm} setPwForm={setPwForm}
@@ -325,17 +316,17 @@ export default function StaffAdminPage() {
                 </Modal>
             )}
 
-            {/* 이미지 프리뷰 포털 */}
+            {/* */}
             {PreviewPortal}
         </section>
     );
 }
 
-/* ---------------- 좌측: 필터 ---------------- */
+/* ---------------- :  ---------------- */
 function FilterPanel({ empType, setEmpType, workLoc, setWorkLoc, keyword, setKeyword, locCodes }) {
     return (
         <div className="aa-panel p-4 mb-4 space-y-3">
-            {/* 대상 */}
+            {/* */}
             <div className="flex items-center justify-between">
                 <div className="text-sm text-slate-400">대상</div>
                 <div className="flex gap-2">
@@ -343,7 +334,7 @@ function FilterPanel({ empType, setEmpType, workLoc, setWorkLoc, keyword, setKey
                         <button
                             key={t.key}
                             type="button"
-                            // ✅ 칩 선택 표시 강화: 'aa-chip-on' + 'active' + aria-pressed
+                            // ✅  : 'aa-chip-on' + 'active' + aria-pressed
                             className={`aa-chip ${empType===t.key ? 'aa-chip-on active' : ''}`}
                             aria-pressed={empType===t.key}
                             onClick={()=> setEmpType(t.key)}
@@ -353,9 +344,9 @@ function FilterPanel({ empType, setEmpType, workLoc, setWorkLoc, keyword, setKey
                 </div>
             </div>
 
-            {/* 소속관 (줄바꿈 방지 + 라벨 합치기) */}
+            {/* ( +  ) */}
             <div className="flex items-center justify-between gap-3">
-                {/* ✅ 줄바꿈 방지 + 라벨 합치기: "소속관" */}
+                {/* ✅  + : " " */}
                 <div className="text-sm text-slate-400 whitespace-nowrap min-w-[52px]">소속관</div>
                 <select
                     className="aa-select min-w-[160px]"
@@ -370,7 +361,7 @@ function FilterPanel({ empType, setEmpType, workLoc, setWorkLoc, keyword, setKey
                 </select>
             </div>
 
-            {/* 검색 */}
+            {/* */}
             <div>
                 <input
                     className="aa-input w-full"
@@ -383,7 +374,7 @@ function FilterPanel({ empType, setEmpType, workLoc, setWorkLoc, keyword, setKey
     );
 }
 
-/* ---------------- 좌측: 목록(이름순) ---------------- */
+/* ---------------- :(순) ---------------- */
 function ListPanel({ list, loading, selectedId, onSelect, locName, roleName, statusName, imgVersion }) {
     if (loading) return <div className="aa-panel p-4">불러오는 중…</div>;
     if (!list?.length) return <div className="aa-panel p-4">결과가 없습니다.</div>;
@@ -393,7 +384,7 @@ function ListPanel({ list, loading, selectedId, onSelect, locName, roleName, sta
     );
 
     return (
-        // ✅ 스크롤 패널 + 행 분리선
+        // ✅  +
         <div className="aa-panel staff-list-panel divide-y">
             {ordered.map(item => {
                 const selected = selectedId===item.id;
@@ -402,13 +393,13 @@ function ListPanel({ list, loading, selectedId, onSelect, locName, roleName, sta
                     <button
                         key={item.id}
                         type="button"
-                        // ✅ 선택 시 배경 + 좌측 강조선 + 굵은 글씨
+                        // ✅  +  +
                         className={`w-full flex items-center gap-3 p-3 text-left transition-colors relative ${selected ? 'bg-slate-800 font-semibold' : 'hover:bg-slate-800/60'}`}
                         onClick={() => onSelect(item.id)}
                         aria-current={selected ? 'true' : 'false'}
                         title={item.userName}
                     >
-                        {/* 좌측 강조선 */}
+                        {/* */}
                         {selected && (
                             <span
                                 aria-hidden="true"
@@ -432,7 +423,7 @@ function ListPanel({ list, loading, selectedId, onSelect, locName, roleName, sta
     );
 }
 
-/* ---------------- 우측: 상세 ---------------- */
+/* ---------------- :  ---------------- */
 function DetailPanel({
                          detail, edit, setEdit, editing, setEditing, onSave, saving, onUploadPhoto,
                          openPw, locCodes, roleCodes, statusCodes, locName, roleName, statusName, imgVersion, onPreviewImage
@@ -442,7 +433,7 @@ function DetailPanel({
 
     const photoSrc = withBust(buildPhotoSrc(detail), imgVersion);
 
-    // 주소: 상세주소에 포커스 주기
+    // :
     const detailAddrRef = useRef(null);
     const onAddressComplete = ({ postalCode, address }) => {
         setEdit(f => ({ ...f, postalCode: postalCode || '', address: address || '' }));
@@ -454,7 +445,7 @@ function DetailPanel({
         <div className="aa-panel p-6 space-y-5">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    {/* 아바타: 클릭 시 확대 (편집 중이 아닐 때만) */}
+                    {/* : (  ) */}
                     {!editing ? (
                         <Avatar
                             size={80}
@@ -490,7 +481,7 @@ function DetailPanel({
                             <button
                                 className="aa-btn"
                                 onClick={()=>{
-                                    // 취소 시 원본으로 복원 (employeeType/주소 포함)
+                                    //  (employeeType/)
                                     setEdit({
                                         userName:         detail.userName,
                                         email:            detail.email,
@@ -515,7 +506,7 @@ function DetailPanel({
                 </div>
             </div>
 
-            {/* 기본 필드들 */}
+            {/* */}
             <div className="grid md:grid-cols-2 gap-4">
                 <Field label="이름">
                     {!editing ? <Readonly>{detail.userName}</Readonly>
@@ -543,7 +534,7 @@ function DetailPanel({
                             </select>
                         )}
                 </Field>
-                {/* 구분(EmployeeType) */}
+                {/* (EmployeeType) */}
                 <Field label="구분(EmployeeType)">
                     {!editing ? (
                         <Readonly>{detail.employeeType === 'TEACHER' ? '강사' : '직원'}</Readonly>
@@ -580,11 +571,11 @@ function DetailPanel({
                 </Field>
             </div>
 
-            {/* ───────────────── 주소 섹션 ───────────────── */}
+            {/* ─────────────────  ───────────────── */}
             <div className="border-t border-slate-700 pt-4 space-y-4">
                 <div className="text-base font-semibold">주소</div>
 
-                {/* 우편번호 + (편집 모드일 때만) 검색 버튼 */}
+                {/* + (  )  */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Field label="우편번호">
                         {!editing ? (
@@ -599,7 +590,7 @@ function DetailPanel({
                                     inputMode="numeric"
                                     maxLength={5}
                                 />
-                                {/* AddressSearch: buttonLabel 사용 */}
+                                {/* AddressSearch: buttonLabel  */}
                                 <AddressSearch
                                     onComplete={onAddressComplete}
                                     className="aa-btn aa-btn-primary whitespace-nowrap"
@@ -611,7 +602,7 @@ function DetailPanel({
                     <div className="hidden md:block" />
                 </div>
 
-                {/* 주소 | 상세주소 */}
+                {/* |  */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Field label="주소">
                         {!editing ? (
@@ -646,7 +637,7 @@ function DetailPanel({
     );
 }
 
-/* ---------------- 공용 작은 컴포넌트 ---------------- */
+/* ----------------   ---------------- */
 function Field({ label, children }) {
     return <label className="block"><div className="text-sm mb-1 text-slate-300">{label}</div>{children}</label>;
 }

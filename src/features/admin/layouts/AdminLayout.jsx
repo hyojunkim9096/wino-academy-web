@@ -3,9 +3,23 @@ import React from 'react';
 import { Outlet } from 'react-router-dom';
 import AdminHeader from '@/features/admin/components/AdminHeader';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
+// ✅ 1.
+import { useAuth } from '@/contexts/AuthContext';
 
 /** 로그인 이후 공통 레이아웃 */
 export default function AdminLayout({ children }) {
+    // ✅ 2.
+    const { authLoading, me } = useAuth();
+
+    // ✅ 3. (me)
+    if (authLoading || !me) {
+        return (
+            <div className="relative min-h-screen bg-slate-950 flex items-center justify-center">
+                <div className="text-white">WINO Academy </div>
+            </div>
+        );
+    }
+
     return (
         <div className="relative min-h-screen">
             {/* 헤더 */}

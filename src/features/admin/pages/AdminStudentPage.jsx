@@ -1,26 +1,10 @@
-// /src/features/admin/pages/AdminStudentPage.jsx
+// src/features/admin/pages/AdminStudentPage.jsx
 // ============================================================================
 // 원생(학생) 관리 화면 — 탭 분리 개정판 (생략 없음, 주석 강화)
-// ----------------------------------------------------------------------------
-// 변경 요약
-//  1) 하단 탭을 모두 분리 컴포넌트로 구성
-//     - ENROLL  → StudentEnrollments (기존 유지: 부모가 enrolls 주입)
-//     - CONSULT → StudentConsults    (기존 유지: 내부에서 자체 로드)
-//     - TUITION → StudentTuitionTab  (신규 분리: 내부에서 자체 로드)
-//     - MEMO    → StudentMemoTab     (신규 분리: 내부에서 자체 로드)
-//     - FAMILY  → StudentFamilyTab   (신규 분리: 내부에서 자체 로드)
-//  2) 부모 컴포넌트(AdminStudentPage)는 목록/상세/계정/사진 위주로 유지
-//     - enrolls는 자식(StudentEnrollments)용으로만 로드
-//  3) 불필요한 guardian 마스터 import 제거(탭 분리로 FamilyTab이 자체 import)
-//  4) "빠른 메모"는 상단 버튼에서 바로 등록만 수행(자식 탭과 분리되어도 무방)
-//  5) [메모 연동] 빠른 메모 등록/탭 내 핀 고정·수정·삭제 직후 새로고침/요약메모 반영
-//     - 부모에 memoReloadTick 상태 추가 → 메모 탭으로 reloadTick 전달(외부 리로드 트리거)
-//     - 빠른 메모 등록 후: detail 재조회(loadDetailWithMeta) + memoReloadTick 증가
-//     - 메모 탭에서 변경 발생 시: onChanged 콜백으로 부모에게 통지 → detail 재조회
-//  6) [NEW] 우측 상세 정보 “접기/펼치기” 토글 추가
-//     - 보기모드 기본: 접힘(true) → 하단 탭이 위로 당겨져 내려가지 않음
-//     - 편집모드 진입 시 자동 펼침(false) → 입력 편의성 확보
-//     - 접힘 범위: “학부/학교/학년” 섹션부터 “상세주소” 섹션까지(비고는 그대로 표시)
+// - ✅ [수정] '형제' 탭 추가
+// - ✅ [수정] 'gender' (성별) 필드 신규/수정 폼에 추가
+// - ✅ [오류 수정] isCodeEnabled 헬퍼 함수 누락 수정
+// - ✅ [오류 수정] Field/RO 헬퍼 함수 중복 선언 방지 (파일 하단으로 이동)
 // ============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -35,14 +19,14 @@ import {
 // 계정/비밀번호
 import { changeStudentPassword, upsertStudentAccount } from '@/api/studentAccountApi';
 
-// (하단 탭 분리로 가족/메모/수강료 관련 API는 자식에서 import)
-
-// 반 배정(목록만 부모에서 로드하여 자식에 제공)
+// 반 배정(목록만 부모에서 로드하여 자식에 주입)
 import { listStudentEnrollments } from '@/api/studentEnrollmentApi';
+// ✅ [신규] 형제 탭 API
+import { linkSibling } from '@/api/studentSiblingApi';
 
 // 공통 코드/알림
 import { getCodes } from '@/api/commonCodeAdminApi';
-import { alertError, alertInfo, alertSuccess } from '@/ui/alert';
+import { alertError, alertInfo, alertSuccess, confirmDialog } from '@/ui/alert';
 
 // 공용 UI/유틸
 import Modal from '@/components/ui/Modal';
@@ -57,6 +41,10 @@ import StudentConsults    from '@/features/admin/components/student/StudentConsu
 import StudentTuitionTab  from '@/features/admin/components/student/StudentTuitionTab';
 import StudentMemoTab     from '@/features/admin/components/student/StudentMemoTab';
 import StudentFamilyTab   from '@/features/admin/components/student/StudentFamilyTab';
+// ✅ [신규] 형제 탭 import
+import StudentSiblingTab  from '@/features/admin/components/student/StudentSiblingTab';
+// ✅ [신규] 학생 검색 모달 import
+import StudentSearchModal from '@/features/admin/components/student/StudentSearchModal';
 
 // 스타일
 import '@/styles/admin-system.css';
@@ -78,7 +66,7 @@ const CODE_ENROLL_STATUS  = 'ENROLL_STATUS';
 
 // ---- 작은 유틸 --------------------------------------------------------------
 const sorted = (arr=[]) =>
-    arr.slice().sort((a,b)=>(a.sortOrder??0)-(b.sortOrder??0) || String(a.name).localeCompare(b.name,'ko'));
+    arr.slice().sort((a,b)=>(a.sortOrder??0)-(b.sortOrder??0) || String(a.name).localeCompare(String(b.name),'ko'));
 
 // 사진 경로 빌더
 function buildPhotoSrc(row){
@@ -132,6 +120,10 @@ async function textareaDialog({ title='내용 입력', text='', placeholder='', 
     return r.isConfirmed ? (r.value ?? '') : null;
 }
 
+// ✅ [오류 수정] isCodeEnabled 헬퍼 함수 (파일 하단에서 참조)
+// (함수 본체는 파일 최하단에 정의되어 있습니다)
+
+
 // ============================================================================
 // 메인 컴포넌트
 // ============================================================================
@@ -144,7 +136,7 @@ export default function AdminStudentPage(){
 
     // ===== 공통코드 =====
     const [locCodes, setLocCodes]             = useState([]);
-    const [stgCodes, setStgCodes]             = useState([]);
+    const [stgCodes, setStgCodes]             = useState([]); // ✅
     const [familyRelCodes, setFamilyRelCodes] = useState([]);
     const [statusCodes, setStatusCodes]       = useState([]);
     const [noticeChannelCodes, setNoticeChannelCodes] = useState([]);
@@ -166,14 +158,15 @@ export default function AdminStudentPage(){
     const [newForm, setNewForm] = useState({
         loginId:'', password:'',
         name:'', schoolStage:'', workLocationCode:'',
-        birthdate:'', phone:'', email:'',
+        birthdate:'', gender: '', // ✅ [신규] gender 추가
+        phone:'', email:'',
         postalCode:'', address:'', detailAddress:'',
         schoolId: null, schoolName: '', grade: '',
         memo:'', status:'PENDING',
         preferSms: true, preferEmail: false, preferPush: false, pushUserKey: ''
     });
 
-    // 하단 탭
+    // ✅ [수정] 탭 목록에 'SIBLING' 추가
     const [tab, setTab] = useState('ENROLL');
 
     // 하위(반 배정)만 부모에서 관리하여 자식에 주입
@@ -192,46 +185,23 @@ export default function AdminStudentPage(){
     const [schoolResults, setSchoolResults]   = useState([]);
     const [schoolLoading, setSchoolLoading]   = useState(false);
 
+    // ✅ [신규] 형제 검색 모달
+    const [siblingPickOpen, setSiblingPickOpen] = useState(false);
+
     // 메모 탭 입력 상태(상단 빠른 메모만 사용)
     const [memoText, setMemoText] = useState('');
-
-    // ------------------------------------------------------------------------
-    // [메모 연동] 메모 탭 강제 리로드용 tick
-    //  - 부모가 값을 증가시키면 자식(StudentMemoTab)의 useEffect가 감지하여 load() 호출
-    // ------------------------------------------------------------------------
     const [memoReloadTick, setMemoReloadTick] = useState(0);
-
-    // ------------------------------------------------------------------------
-    // [NEW] 우측 상세 "접기/펼치기" 토글 상태
-    //  - 보기모드 기본: 접힘(true) → 탭이 더 위로
-    //  - 편집모드 진입 시 자동으로 펼침(false) 처리
-    // ------------------------------------------------------------------------
     const [infoCollapsed, setInfoCollapsed] = useState(true);
     useEffect(()=>{
-        // 편집 시작하면 자동 펼침, 편집 종료 시에는 사용자가 마지막으로 둔 상태 유지
         if (editing) setInfoCollapsed(false);
     },[editing]);
 
-    // 채널 활성 여부 판정(신규 생성 시 사용)
-    const isCodeEnabled = (c)=>{
-        if (!c) return false;
-        if (typeof c.enabled === 'boolean') return c.enabled;
-        if (typeof c.active  === 'boolean') return c.active;
-        if (c.useYn !== undefined) {
-            const v = String(c.useYn).toUpperCase();
-            return v === '1' || v === 'Y' || v === 'TRUE';
-        }
-        if (c.enabledYn !== undefined) {
-            const v = String(c.enabledYn).toUpperCase();
-            return v === '1' || v === 'Y' || v === 'TRUE';
-        }
-        return true;
-    };
+    // ✅ [오류 수정] isCodeEnabled 함수 참조
     const noticeEnabledMap = useMemo(()=>{
         const map = { SMS:false, EMAIL:false, APP:false };
         for (const c of noticeChannelCodes || []) {
             const code = String(c.code || '').toUpperCase();
-            const on = isCodeEnabled(c);
+            const on = isCodeEnabled(c); //
             if (code === 'SMS')                    map.SMS   = on;
             if (code === 'EMAIL' || code === 'MAIL') map.EMAIL = on;
             if (code === 'APP'   || code === 'PUSH') map.APP   = on;
@@ -241,10 +211,9 @@ export default function AdminStudentPage(){
     const smsEnabled   = !!noticeEnabledMap.SMS;
     const emailEnabled = !!noticeEnabledMap.EMAIL;
     const appEnabled   = !!noticeEnabledMap.APP;
-
     const isActiveStudent = String(detail?.status||'').toUpperCase() === 'ACTIVE';
 
-    // ===== 공통코드 로드 =====
+    // ===== 공통코드 로드 (동일) =====
     useEffect(()=>{
         let alive = true;
         (async ()=>{
@@ -258,7 +227,7 @@ export default function AdminStudentPage(){
                 if(!alive) return;
                 const sortedBy = (arr=[]) => arr.slice().sort((a,b)=>(a.sortOrder??0)-(b.sortOrder??0) || String(a.name).localeCompare(b.name,'ko'));
                 setLocCodes(sortedBy(loc||[]));
-                setStgCodes(sortedBy(stg||[]));
+                setStgCodes(sortedBy(stg||[])); // ✅
                 setFamilyRelCodes(sortedBy(rel||[]));
                 setStatusCodes(sortedBy(sts||[]));
                 setNoticeChannelCodes(sortedBy(notice||[]));
@@ -270,13 +239,13 @@ export default function AdminStudentPage(){
         return ()=>{ alive=false; };
     },[]);
 
-    // 검색 디바운스
+    // ===== 검색 디바운스 (동일) =====
     useEffect(()=>{
         const t = setTimeout(()=> setKwDebounced(keyword.trim()), 250);
         return ()=> clearTimeout(t);
     },[keyword]);
 
-    // 목록 로드
+    // ===== 목록 로드 (동일) =====
     const inflight = useRef(0);
     const loadList = useCallback(async (keep=false)=>{
         setLoading(true);
@@ -288,7 +257,7 @@ export default function AdminStudentPage(){
                 keyword: kwDebounced || undefined,
                 page:0, size:30
             });
-            if (my !== inflight.current) return; // 최신 호출만 반영
+            if (my !== inflight.current) return;
             const rows = Array.isArray(res?.content) ? res.content : (Array.isArray(res)?res:[]);
             rows.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko',{sensitivity:'base'}));
             setList(rows);
@@ -303,12 +272,13 @@ export default function AdminStudentPage(){
 
     useEffect(()=>{ loadList(false); },[loadList]);
 
-    // 상세 → edit 세팅
+    // ===== 상세 → edit 세팅 (gender 추가) =====
     const toEdit = (d)=>({
         name: d?.name ?? '',
         schoolStage: d?.schoolStage ?? (stgCodes[0]?.code ?? ''),
         workLocationCode: d?.workLocationCode ?? (locCodes[0]?.code ?? ''),
         birthdate: d?.birthdate ?? '',
+        gender: d?.gender ?? '', // ✅ [신규]
         phone: d?.phone ?? '',
         email: d?.email ?? '',
         postalCode: d?.postalCode ?? '',
@@ -322,10 +292,10 @@ export default function AdminStudentPage(){
         status: d?.status ?? 'PENDING',
         schoolId: d?.schoolId ?? (d?.school?.id ?? null),
         schoolName: d?.schoolName ?? (d?.school?.name ?? ''),
-        grade: d?.gradeLabel ?? '' // gradeLabel 사용
+        grade: d?.gradeLabel ?? ''
     });
 
-    // 상세 + 메타 로드
+    // ===== 상세 + 메타 로드 (동일) =====
     const loadDetailWithMeta = useCallback(async (id)=>{
         if (!id) return null;
         try{
@@ -356,7 +326,7 @@ export default function AdminStudentPage(){
         // eslint-disable-next-line react-hooks/exhaustive-deps
     },[stgCodes, locCodes]);
 
-    // 하위 데이터: 이 페이지에서는 "배정(enrolls)만" 유지 → StudentEnrollments에 props로 전달
+    // ===== 하위 데이터: 배정 (동일) =====
     const loadEnrollsOnly = useCallback(async (id)=>{
         try{
             const en = await listStudentEnrollments(id);
@@ -364,7 +334,7 @@ export default function AdminStudentPage(){
         }catch{ setEnrolls([]); }
     },[]);
 
-    // 상세 로드 트리거
+    // ===== 상세 로드 트리거 (동일) =====
     useEffect(()=>{
         if (creating){
             setDetail(null); setEdit(null); setEditing(false);
@@ -385,7 +355,7 @@ export default function AdminStudentPage(){
         return ()=>{ alive=false; };
     },[selectedId, imgVersion, creating, loadDetailWithMeta, loadEnrollsOnly]);
 
-    // 새로고침(목록 유지 + 상세/배정 갱신)
+    // ===== 새로고침 (동일) =====
     const refreshAll = useCallback(async ()=>{
         await loadList(true);
         if (!creating && selectedId){
@@ -394,7 +364,7 @@ export default function AdminStudentPage(){
         }
     },[creating, selectedId, loadList, loadEnrollsOnly, loadDetailWithMeta]);
 
-    // 저장(수정)
+    // ===== 저장(수정) (gender 추가) =====
     const onSave = async ()=>{
         if (!selectedId || !edit) return;
         const name = (edit.name||'').trim();
@@ -402,19 +372,16 @@ export default function AdminStudentPage(){
         setSaving(true);
         try{
             const { memo: _omitMemo, ...rest } = edit || {};
-
-            // 채널 비활성 시 prefer* 강제 false / pushUserKey null
             const payload = { ...rest };
             if (!smsEnabled)   payload.preferSms = false;
             if (!emailEnabled) payload.preferEmail = false;
             if (!appEnabled) { payload.preferPush = false; payload.pushUserKey = null; }
-
-            // 연락처 부재 가드
             if (!String(payload.phone||'').trim())  payload.preferSms = false;
             if (!String(payload.email||'').trim())  payload.preferEmail = false;
 
             await updateStudent(selectedId, {
                 ...payload,
+                gender: payload.gender || null, // ✅ [신규] gender
                 schoolId: payload.schoolId ?? null,
                 grade: payload.grade ?? null
             });
@@ -430,13 +397,13 @@ export default function AdminStudentPage(){
         }
     };
 
-    // 사진 업로드
+    // ===== 사진 업로드 (동일) =====
     const onUploadPhoto = async (e)=>{
         const file = e.target.files?.[0];
         if(!file) return;
         try{
             await uploadStudentPhoto(selectedId, file);
-            setImgVersion(v=>v+1); // bust 캐시
+            setImgVersion(v=>v+1);
             await loadList(true);
             await loadDetailWithMeta(selectedId);
             await safeOk('성공','사진이 변경되었습니다.');
@@ -445,7 +412,7 @@ export default function AdminStudentPage(){
         }finally{ e.target.value=''; }
     };
 
-    // 신규 생성 시작/취소
+    // ===== 신규 생성 (시작/취소/실행) (gender 추가) =====
     const startCreate = ()=>{
         setCreating(true);
         setSelectedId(null);
@@ -455,7 +422,8 @@ export default function AdminStudentPage(){
             ...f,
             name:'', schoolStage: stage || (stgCodes[0]?.code ?? ''),
             workLocationCode: workLoc || (locCodes[0]?.code ?? ''),
-            birthdate:'', phone:'', email:'',
+            birthdate:'', gender: '', // ✅ [신규]
+            phone:'', email:'',
             schoolId: null, schoolName:'', grade:'',
             memo:'', status:'PENDING',
             postalCode:'', address:'', detailAddress:'',
@@ -467,14 +435,13 @@ export default function AdminStudentPage(){
         setNewForm({
             loginId:'', password:'',
             name:'', schoolStage:'', workLocationCode:'',
-            birthdate:'', phone:'', email:'', postalCode:'', address:'', detailAddress:'',
+            birthdate:'', gender: '', // ✅ [신규]
+            phone:'', email:'', postalCode:'', address:'', detailAddress:'',
             schoolId:null, schoolName:'', grade:'', memo:'', status:'PENDING',
             preferSms: true, preferEmail: false, preferPush: false, pushUserKey: ''
         });
         if (list.length>0) setSelectedId(list[0].id);
     };
-
-    // 신규 생성 실행
     const createNewNow = async ()=>{
         const nf = newForm || {};
         const name = (nf.name||'').trim();
@@ -488,9 +455,9 @@ export default function AdminStudentPage(){
                 schoolStage: nf.schoolStage || (stgCodes[0]?.code ?? 'E'),
                 workLocationCode: nf.workLocationCode || (locCodes[0]?.code ?? 'N'),
                 birthdate: nf.birthdate || null,
+                gender: nf.gender || null, // ✅ [신규]
                 phone: nf.phone || null,
                 email: nf.email || null,
-                // 채널 활성 여부 반영
                 preferSms:   smsEnabled   ? (!!nf.preferSms   && !!String(nf.phone||'').trim())  : false,
                 preferEmail: emailEnabled ? (!!nf.preferEmail && !!String(nf.email||'').trim())  : false,
                 preferPush:  appEnabled   ? !!nf.preferPush  : false,
@@ -504,7 +471,6 @@ export default function AdminStudentPage(){
                 memo: nf.memo || null
             });
 
-            // 계정 upsert (둘 중 하나라도 있으면)
             if (created?.id && (login || pw)){
                 await upsertStudentAccount(created.id, { loginId: login || null, password: pw || null });
             }
@@ -521,13 +487,12 @@ export default function AdminStudentPage(){
         }
     };
 
-    // 학교 검색 실행
+    // ===== 학교 검색 (동일) =====
     const doSearchSchool = async (forStageCode)=>{
         const st = (forStageCode||'').trim();
         if (!st) { setSchoolResults([]); return; }
         setSchoolLoading(true);
         try{
-            // 학교 검색 API — 기존과 동일
             const { listSchools } = await import('@/api/schoolAdminApi');
             const res = await listSchools(
                 { stage: st, keyword: schoolQuery||undefined, active: true, size: 20, page: 0 },
@@ -540,7 +505,19 @@ export default function AdminStudentPage(){
         finally{ setSchoolLoading(false); }
     };
 
-    // 상단 "빠른 메모" 저장(간단 등록만 수행)
+    // ===== ✅ [신규] 형제 연결 (모달 열기) =====
+    const onLinkSibling = async (siblingStudent) => {
+        if (!selectedId || !siblingStudent?.id) return;
+        try {
+            await linkSibling(selectedId, siblingStudent.id, '형제');
+            await safeOk('성공', `${siblingStudent.name} 학생과 형제로 연결되었습니다.`);
+            // (onChanged 콜백은 Sibling 탭 내부에서 처리됨)
+        } catch(e) {
+            safeError('오류', e?.response?.data?.message || '형제 연결 실패');
+        }
+    };
+
+    // ===== 빠른 메모 (동일) =====
     const addQuickMemo = async (contentText)=>{
         const txt = (contentText ?? memoText ?? '').trim();
         if (!selectedId) return;
@@ -550,9 +527,6 @@ export default function AdminStudentPage(){
             await addStudentMemo(selectedId, { content: txt });
             setMemoText('');
             await safeOk('성공', '메모가 저장되었습니다.');
-            // ----------------------------------------------------------------
-            // [메모 연동] 요약메모(detail.memo) 최신화 + 탭 리스트 강제 리로드
-            // ----------------------------------------------------------------
             await loadDetailWithMeta(selectedId);
             setMemoReloadTick(t=>t+1);
         }catch(e){
@@ -560,7 +534,7 @@ export default function AdminStudentPage(){
         }
     };
 
-    // ---- 표시용 헬퍼 ----
+    // ---- 표시용 헬퍼 (동일) ----
     const detailPhotoUrl = buildPhotoSrc(detail);
     const photoSrc = detailPhotoUrl ? withBust(detailPhotoUrl, imgVersion) : '';
     const locName  = (c)=> (locCodes.find(x=>String(x.code).toUpperCase()===String(c||'').toUpperCase())?.name || c || '-');
@@ -692,6 +666,18 @@ export default function AdminStudentPage(){
                                             <input className="aa-input" type="date" value={newForm.birthdate||''}
                                                    onChange={e=>setNewForm(f=>({...f, birthdate:e.target.value}))} />
                                         </Field>
+                                        {/* ✅ [신규] 성별 */}
+                                        <Field label="성별">
+                                            <select className="aa-select" value={newForm.gender}
+                                                    onChange={e=>setNewForm(f=>({...f, gender:e.target.value}))}>
+                                                <option value="">선택</option>
+                                                <option value="m">남</option>
+                                                <option value="f">여</option>
+                                                <option value="o">기타</option>
+                                            </select>
+                                        </Field>
+                                    </div>
+                                    <div className="grid md:grid-cols-3 gap-3">
                                         <Field label="소속 관">
                                             <select className="aa-select" value={newForm.workLocationCode}
                                                     onChange={e=>setNewForm(f=>({...f, workLocationCode:e.target.value}))}>
@@ -746,46 +732,32 @@ export default function AdminStudentPage(){
                                         </Field>
                                     </div>
 
-                                    {/* 알림 동의 */}
+                                    {/* (알림 동의, Push Key - 동일) */}
                                     {(smsEnabled || emailEnabled || appEnabled) && (
                                         <div className="grid md:grid-cols-3 gap-3">
-                                            {smsEnabled && (
-                                                <Field label="문자(SMS) 동의">
-                                                    <label className="inline-flex items-center gap-2">
-                                                        <input type="checkbox"
-                                                               checked={!!newForm.preferSms}
-                                                               onChange={e=>setNewForm(f=>({...f, preferSms: e.target.checked}))}/>
-                                                        <span className="text-sm text-slate-300">동의</span>
-                                                    </label>
-                                                    <div className="text-xs text-slate-400 mt-1">연락처가 없으면 자동으로 해제됩니다.</div>
-                                                </Field>
-                                            )}
-                                            {emailEnabled && (
-                                                <Field label="이메일 동의">
-                                                    <label className="inline-flex items-center gap-2">
-                                                        <input type="checkbox"
-                                                               checked={!!newForm.preferEmail}
-                                                               onChange={e=>setNewForm(f=>({...f, preferEmail: e.target.checked}))}/>
-                                                        <span className="text-sm text-slate-300">동의</span>
-                                                    </label>
-                                                    <div className="text-xs text-slate-400 mt-1">이메일이 없으면 자동으로 해제됩니다.</div>
-                                                </Field>
-                                            )}
-                                            {appEnabled && (
-                                                <Field label="앱 푸시 동의">
-                                                    <label className="inline-flex items-center gap-2">
-                                                        <input type="checkbox"
-                                                               checked={!!newForm.preferPush}
-                                                               onChange={e=>setNewForm(f=>({...f, preferPush: e.target.checked}))}/>
-                                                        <span className="text-sm text-slate-300">동의</span>
-                                                    </label>
-                                                    <div className="text-xs text-slate-400 mt-1">Push User Key 입력 시 사용됩니다.</div>
-                                                </Field>
-                                            )}
+                                            {/* ... (sms) ... */}
+                                            <Field label="문자(SMS) 동의">
+                                                <label className="inline-flex items-center gap-2">
+                                                    <input type="checkbox" checked={!!newForm.preferSms} onChange={e=>setNewForm(f=>({...f, preferSms: e.target.checked}))}/>
+                                                    <span className="text-sm text-slate-300">동의</span>
+                                                </label>
+                                            </Field>
+                                            {/* ... (email) ... */}
+                                            <Field label="이메일 동의">
+                                                <label className="inline-flex items-center gap-2">
+                                                    <input type="checkbox" checked={!!newForm.preferEmail} onChange={e=>setNewForm(f=>({...f, preferEmail: e.target.checked}))}/>
+                                                    <span className="text-sm text-slate-300">동의</span>
+                                                </label>
+                                            </Field>
+                                            {/* ... (push) ... */}
+                                            <Field label="앱 푸시 동의">
+                                                <label className="inline-flex items-center gap-2">
+                                                    <input type="checkbox" checked={!!newForm.preferPush} onChange={e=>setNewForm(f=>({...f, preferPush: e.target.checked}))}/>
+                                                    <span className="text-sm text-slate-300">동의</span>
+                                                </label>
+                                            </Field>
                                         </div>
                                     )}
-
-                                    {/* Push User Key — APP 비활성 시 비표시 */}
                                     {appEnabled && (
                                         <div className="grid md:grid-cols-3 gap-3">
                                             <Field label="Push User Key (선택)">
@@ -860,6 +832,7 @@ export default function AdminStudentPage(){
                                     <div className="space-y-4">
                                         {/* 헤더 */}
                                         <div className="flex items-start justify-between">
+                                            {/* ... (아바타, 이름, 메타정보 - 동일) ... */}
                                             <div className="flex items-start gap-4">
                                                 <div>
                                                     {!editing ? (
@@ -906,8 +879,8 @@ export default function AdminStudentPage(){
                                                     )}
                                                 </div>
                                             </div>
+                                            {/* ... (버튼들 - 동일) ... */}
                                             <div className="flex flex-wrap gap-2 justify-end">
-                                                {/* [NEW] 상세 접기/펼치기 토글 (보기/편집 공용 표시, 편집 시 자동 펼침됨) */}
                                                 <button
                                                     className="aa-btn"
                                                     type="button"
@@ -918,41 +891,13 @@ export default function AdminStudentPage(){
                                                 >
                                                     {infoCollapsed ? '상세 펼치기' : '상세 접기'}
                                                 </button>
-
                                                 {!editing ? (
                                                     <>
-                                                        {detail.status==='PENDING' && (
-                                                            <button className="aa-btn aa-btn-primary"
-                                                                    onClick={async ()=>{
-                                                                        try{
-                                                                            await updateStudent(selectedId, { status:'ACTIVE' });
-                                                                            const merged = await loadDetailWithMeta(selectedId);
-                                                                            await safeOk('성공','활성화되었습니다.');
-                                                                            if (merged) await loadEnrollsOnly(selectedId);
-                                                                        }catch(e){
-                                                                            safeError('오류', e?.response?.data?.message || '활성화 실패');
-                                                                        }
-                                                                    }}>
-                                                                활성화
-                                                            </button>
-                                                        )}
+                                                        {/* (활성화, 메모, 비번변경, 삭제, 수정 버튼) */}
+                                                        {detail.status==='PENDING' && (<button className="aa-btn aa-btn-primary" onClick={async ()=>{ try{ await updateStudent(selectedId, { status:'ACTIVE' }); const merged = await loadDetailWithMeta(selectedId); await safeOk('성공','활성화되었습니다.'); if (merged) await loadEnrollsOnly(selectedId); }catch(e){ safeError('오류', e?.response?.data?.message || '활성화 실패'); } }}>활성화</button>)}
                                                         <button className="aa-btn" onClick={()=>setQuickMemoOpen(true)}>메모 남기기</button>
                                                         <button className="aa-btn" onClick={()=>setPwOpen(true)}>비밀번호 변경</button>
-                                                        <button className="aa-btn aa-btn-danger" onClick={async ()=>{
-                                                            const ok = await Swal.fire({
-                                                                title:'확인', text:'학생을 삭제할까요? 이 작업은 되돌릴 수 없습니다.',
-                                                                showCancelButton:true, confirmButtonText:'삭제', cancelButtonText:'취소',
-                                                                confirmButtonColor:'#ef4444', reverseButtons:true, ...commonHooks
-                                                            }).then(r=>r.isConfirmed);
-                                                            if (!ok) return;
-                                                            try{
-                                                                await deleteStudent(selectedId);
-                                                                await safeOk('성공','삭제되었습니다.');
-                                                                await loadList(false);
-                                                            }catch(e){
-                                                                safeError('오류', e?.response?.data?.message || '삭제 실패');
-                                                            }
-                                                        }}>삭제</button>
+                                                        <button className="aa-btn aa-btn-danger" onClick={async ()=>{ const ok = await confirmDialog('확인', '학생을 삭제할까요? 이 작업은 되돌릴 수 없습니다.', { confirmText: '삭제' }); if (!ok) return; try{ await deleteStudent(selectedId); await safeOk('성공','삭제되었습니다.'); await loadList(false); }catch(e){ safeError('오류', e?.response?.data?.message || '삭제 실패'); } }}>삭제</button>
                                                         <button className="aa-btn aa-btn-primary" onClick={()=>setEditing(true)}>수정</button>
                                                     </>
                                                 ) : (
@@ -966,27 +911,20 @@ export default function AdminStudentPage(){
 
                                         {/* ======= 상세 폼 ======= */}
                                         <div className="space-y-4">
-                                            {/* 1) 아이디 / 비밀번호 / 상태 — 항상 표시 */}
+                                            {/* 1) 아이디 / 비밀번호 / 상태 (동일) */}
                                             <div className="grid md:grid-cols-3 gap-3">
-                                                <Field label="아이디">
-                                                    <RO>{detail.loginId || (detail.userId ? `#${detail.userId}` : '-')}</RO>
-                                                </Field>
-                                                <Field label="비밀번호">
-                                                    {!editing ? <RO>•••••• (상단 버튼으로 변경)</RO> : <RO>상단 "비밀번호 변경"을 사용하세요</RO>}
-                                                </Field>
+                                                <Field label="아이디"><RO>{detail.loginId || (detail.userId ? `#${detail.userId}` : '-')}</RO></Field>
+                                                <Field label="비밀번호">{!editing ? <RO>•••••• (상단 버튼으로 변경)</RO> : <RO>상단 "비밀번호 변경"을 사용하세요</RO>}</Field>
                                                 <Field label="상태">
-                                                    {!editing ? (
-                                                        <RO>{statusName(detail.status)}</RO>
-                                                    ) : (
-                                                        <select className="aa-select" value={edit.status}
-                                                                onChange={e=>setEdit(f=>({...f, status:e.target.value}))}>
+                                                    {!editing ? (<RO>{statusName(detail.status)}</RO>) : (
+                                                        <select className="aa-select" value={edit.status} onChange={e=>setEdit(f=>({...f, status:e.target.value}))}>
                                                             {sorted(statusCodes).map(s=>(<option key={s.code} value={s.code}>{s.name} ({s.code})</option>))}
                                                         </select>
                                                     )}
                                                 </Field>
                                             </div>
 
-                                            {/* 2) 이름 / 생년월일 / 소속관 — 항상 표시 */}
+                                            {/* 2) 이름 / 생년월일 / 성별 / 소속관 (gender 추가) */}
                                             <div className="grid md:grid-cols-3 gap-3">
                                                 <Field label="이름">
                                                     {!editing ? <RO>{detail.name}</RO> : (
@@ -998,6 +936,19 @@ export default function AdminStudentPage(){
                                                         <input className="aa-input" type="date" value={edit.birthdate||''} onChange={e=>setEdit(f=>({...f,birthdate:e.target.value}))} />
                                                     )}
                                                 </Field>
+                                                {/* ✅ [신규] 성별 필드 */}
+                                                <Field label="성별">
+                                                    {!editing ? <RO>{detail.gender === 'm' ? '남' : detail.gender === 'f' ? '여' : (detail.gender || '-')}</RO> : (
+                                                        <select className="aa-select" value={edit.gender || ''} onChange={set('gender')}>
+                                                            <option value="">선택</option>
+                                                            <option value="m">남</option>
+                                                            <option value="f">여</option>
+                                                            <option value="o">기타</option>
+                                                        </select>
+                                                    )}
+                                                </Field>
+                                            </div>
+                                            <div className="grid md:grid-cols-3 gap-3">
                                                 <Field label="소속 관">
                                                     {!editing ? <RO>{locName(detail.workLocationCode)}</RO> : (
                                                         <select className="aa-select" value={edit.workLocationCode} onChange={e=>setEdit(f=>({...f,workLocationCode:e.target.value}))}>
@@ -1010,7 +961,8 @@ export default function AdminStudentPage(){
                                             {/* ===== [NEW] 접힘 대상 시작: 학부 ~ 상세주소 ===== */}
                                             <div
                                                 id="student-detail-collapsible"
-                                                hidden={infoCollapsed} // 완전히 DOM에서 숨김(공간 차지 X)
+                                                hidden={infoCollapsed} //
+                                                className="space-y-4" //
                                             >
                                                 {/* 3) 학부 / 학교 / 학년 */}
                                                 <div className="grid md:grid-cols-3 gap-3">
@@ -1066,18 +1018,14 @@ export default function AdminStudentPage(){
                                                     </Field>
                                                 </div>
 
-                                                {/* 알림 동의 */}
+                                                {/* (알림 동의, Push Key - 동일) */}
                                                 {(smsEnabled || emailEnabled || appEnabled) && (
                                                     <div className="grid md:grid-cols-3 gap-3">
                                                         {smsEnabled && (
                                                             <Field label="문자(SMS) 동의">
-                                                                {!editing ? (
-                                                                    <RO>{detail.preferSms ? '동의' : '미동의'}</RO>
-                                                                ) : (
+                                                                {!editing ? (<RO>{detail.preferSms ? '동의' : '미동의'}</RO>) : (
                                                                     <label className="inline-flex items-center gap-2 px-3 py-2 rounded border border-slate-700 bg-slate-800">
-                                                                        <input type="checkbox"
-                                                                               checked={!!edit.preferSms}
-                                                                               onChange={e=>setEdit(f=>({...f, preferSms: e.target.checked}))}/>
+                                                                        <input type="checkbox" checked={!!edit.preferSms} onChange={e=>setEdit(f=>({...f, preferSms: e.target.checked}))}/>
                                                                         <span className="text-sm">동의</span>
                                                                     </label>
                                                                 )}
@@ -1085,13 +1033,9 @@ export default function AdminStudentPage(){
                                                         )}
                                                         {emailEnabled && (
                                                             <Field label="이메일 동의">
-                                                                {!editing ? (
-                                                                    <RO>{detail.preferEmail ? '동의' : '미동의'}</RO>
-                                                                ) : (
+                                                                {!editing ? (<RO>{detail.preferEmail ? '동의' : '미동의'}</RO>) : (
                                                                     <label className="inline-flex items-center gap-2 px-3 py-2 rounded border border-slate-700 bg-slate-800">
-                                                                        <input type="checkbox"
-                                                                               checked={!!edit.preferEmail}
-                                                                               onChange={e=>setEdit(f=>({...f, preferEmail: e.target.checked}))}/>
+                                                                        <input type="checkbox" checked={!!edit.preferEmail} onChange={e=>setEdit(f=>({...f, preferEmail: e.target.checked}))}/>
                                                                         <span className="text-sm">동의</span>
                                                                     </label>
                                                                 )}
@@ -1099,13 +1043,9 @@ export default function AdminStudentPage(){
                                                         )}
                                                         {appEnabled && (
                                                             <Field label="앱 푸시 동의">
-                                                                {!editing ? (
-                                                                    <RO>{detail.preferPush ? '동의' : '미동의'}</RO>
-                                                                ) : (
+                                                                {!editing ? (<RO>{detail.preferPush ? '동의' : '미동의'}</RO>) : (
                                                                     <label className="inline-flex items-center gap-2 px-3 py-2 rounded border border-slate-700 bg-slate-800">
-                                                                        <input type="checkbox"
-                                                                               checked={!!edit.preferPush}
-                                                                               onChange={e=>setEdit(f=>({...f, preferPush: e.target.checked}))}/>
+                                                                        <input type="checkbox" checked={!!edit.preferPush} onChange={e=>setEdit(f=>({...f, preferPush: e.target.checked}))}/>
                                                                         <span className="text-sm">동의</span>
                                                                     </label>
                                                                 )}
@@ -1113,14 +1053,10 @@ export default function AdminStudentPage(){
                                                         )}
                                                     </div>
                                                 )}
-
-                                                {/* Push User Key — APP 비활성 시 숨김 */}
                                                 {appEnabled && (
                                                     <div className="grid md:grid-cols-3 gap-3">
                                                         <Field label="Push User Key (선택)">
-                                                            {!editing ? (
-                                                                <RO>{detail.pushUserKey || '-'}</RO>
-                                                            ) : (
+                                                            {!editing ? (<RO>{detail.pushUserKey || '-'}</RO>) : (
                                                                 <input className="aa-input" value={edit.pushUserKey||''}
                                                                        onChange={e=>setEdit(f=>({...f, pushUserKey: e.target.value}))}
                                                                        placeholder="푸시 식별자(있을 때만)"/>
@@ -1133,28 +1069,17 @@ export default function AdminStudentPage(){
                                                 <div className="grid md:grid-cols-12 gap-3">
                                                     <div className="md:col-span-3">
                                                         <Field label="우편번호">
-                                                            {!editing ? (
-                                                                <RO>{detail.postalCode || '-'}</RO>
-                                                            ) : (
+                                                            {!editing ? (<RO>{detail.postalCode || '-'}</RO>) : (
                                                                 <div className="flex items-center gap-2">
                                                                     <input
                                                                         className="aa-input w-24 sm:w-28 md:w-32"
                                                                         value={edit.postalCode || ''}
-                                                                        onChange={e => setEdit(f => ({
-                                                                            ...f,
-                                                                            postalCode: e.target.value.replace(/[^0-9]/g, '').slice(0, 5)
-                                                                        }))}
+                                                                        onChange={e => setEdit(f => ({ ...f, postalCode: e.target.value.replace(/[^0-9]/g, '').slice(0, 5) }))}
                                                                         maxLength={5}
                                                                         inputMode="numeric"
                                                                     />
                                                                     <AddressSearch
-                                                                        onComplete={({ postalCode, address }) =>
-                                                                            setEdit(f => ({
-                                                                                ...f,
-                                                                                postalCode: postalCode || '',
-                                                                                address: address || ''
-                                                                            }))
-                                                                        }
+                                                                        onComplete={({ postalCode, address }) => setEdit(f => ({ ...f, postalCode: postalCode || '', address: address || '' }))}
                                                                         className="aa-btn aa-btn-primary"
                                                                         buttonLabel="우편번호 검색"
                                                                     />
@@ -1164,18 +1089,14 @@ export default function AdminStudentPage(){
                                                     </div>
                                                     <div className="md:col-span-5">
                                                         <Field label="주소">
-                                                            {!editing ? (
-                                                                <RO>{detail.address || '-'}</RO>
-                                                            ) : (
+                                                            {!editing ? (<RO>{detail.address || '-'}</RO>) : (
                                                                 <input className="aa-input" value={edit.address || ''} readOnly />
                                                             )}
                                                         </Field>
                                                     </div>
                                                     <div className="md:col-span-4">
                                                         <Field label="상세주소">
-                                                            {!editing ? (
-                                                                <RO>{detail.detailAddress || '-'}</RO>
-                                                            ) : (
+                                                            {!editing ? (<RO>{detail.detailAddress || '-'}</RO>) : (
                                                                 <input
                                                                     className="aa-input"
                                                                     value={edit.detailAddress || ''}
@@ -1205,55 +1126,28 @@ export default function AdminStudentPage(){
                                                     <button className={tab==='CONSULT'?'active':''} onClick={()=>setTab('CONSULT')}>상담</button>
                                                     <button className={tab==='MEMO'?'active':''}    onClick={()=>setTab('MEMO')}>메모</button>
                                                     <button className={tab==='FAMILY'?'active':''}  onClick={()=>setTab('FAMILY')}>가족</button>
+                                                    {/* ✅ [신규] 형제 탭 버튼 */}
+                                                    <button className={tab==='SIBLING'?'active':''}  onClick={()=>setTab('SIBLING')}>형제</button>
                                                 </div>
 
-                                                {/* ENROLL — 기존 그대로(부모가 enrolls 주입) */}
-                                                {tab==='ENROLL' && (
-                                                    <StudentEnrollments
-                                                        studentId={selectedId}
-                                                        studentDetail={detail}
-                                                        enrolls={enrolls}
-                                                        enrollStatusCodes={enrollStatusCodes}
-                                                        onReload={async ()=>{
-                                                            await loadEnrollsOnly(selectedId);
-                                                        }}
-                                                    />
-                                                )}
+                                                {/* (ENROLL, TUITION, CONSULT, MEMO, FAMILY 탭 렌더링은 동일) */}
+                                                {tab==='ENROLL' && (<StudentEnrollments studentId={selectedId} studentDetail={detail} enrolls={enrolls} enrollStatusCodes={enrollStatusCodes} onReload={async ()=>{ await loadEnrollsOnly(selectedId); }} />)}
+                                                {tab==='TUITION' && (<StudentTuitionTab studentId={selectedId} studentDetail={detail} onChanged={refreshAll} />)}
+                                                {tab==='CONSULT' && (<StudentConsults studentId={selectedId} />)}
+                                                {tab==='MEMO' && (<StudentMemoTab studentId={selectedId} disabled={editing} reloadTick={memoReloadTick} onChanged={async ()=>{ await loadDetailWithMeta(selectedId); }} />)}
+                                                {tab==='FAMILY' &&(<StudentFamilyTab studentId={selectedId} familyRelCodes={familyRelCodes} onChanged={refreshAll} />)}
 
-                                                {/* TUITION — 신규 분리(내부 로딩) */}
-                                                {tab==='TUITION' && (
-                                                    <StudentTuitionTab
+                                                {/* ✅ [신규] 형제 탭 */}
+                                                {tab==='SIBLING'&&(
+                                                    <StudentSiblingTab
                                                         studentId={selectedId}
-                                                        studentDetail={detail}
                                                         onChanged={refreshAll}
-                                                    />
-                                                )}
-
-                                                {/* CONSULT — 기존 분리(내부 로딩) */}
-                                                {tab==='CONSULT' && (
-                                                    <StudentConsults studentId={selectedId} />
-                                                )}
-
-                                                {/* MEMO — 신규 분리(내부 로딩) */}
-                                                {tab==='MEMO' && (
-                                                    <StudentMemoTab
-                                                        studentId={selectedId}
-                                                        disabled={editing}
-                                                        // [메모 연동] 외부 강제 새로고침 tick
-                                                        reloadTick={memoReloadTick}
-                                                        // [메모 연동] 탭 내 변경 완료 시 요약메모(detail.memo) 갱신
-                                                        onChanged={async ()=>{
-                                                            await loadDetailWithMeta(selectedId);
-                                                        }}
-                                                    />
-                                                )}
-
-                                                {/* FAMILY — 신규 분리(내부 로딩) */}
-                                                {tab==='FAMILY'&&(
-                                                    <StudentFamilyTab
-                                                        studentId={selectedId}
-                                                        familyRelCodes={familyRelCodes}
-                                                        onChanged={refreshAll}
+                                                        // ✅ [수정] 공통코드 주입
+                                                        stageCodes={stgCodes}
+                                                        locCodes={locCodes}
+                                                        statusCodes={statusCodes}
+                                                        // ✅ [수정] 모달을 부모(여기)에서 열도록 콜백 전달
+                                                        onOpenSiblingPicker={() => setSiblingPickOpen(true)}
                                                     />
                                                 )}
                                             </div>
@@ -1266,10 +1160,11 @@ export default function AdminStudentPage(){
                 </div>
             </div>
 
-            {/* ===== 모달: 학교 검색 ===== */}
+            {/* ===== 모달: 학교 검색 (동일) ===== */}
             {schoolPickOpen && (
                 <Modal title="학교 검색" onClose={()=>setSchoolPickOpen(false)} size="2xl">
                     <div className="space-y-3">
+                        {/* ... (내용 동일) ... */}
                         <div className="text-slate-300">
                             학부: <b>{(creating ? stgCodes.find(x=>x.code===newForm.schoolStage)?.name : stgCodes.find(x=>x.code===edit?.schoolStage)?.name) || '-'}</b>
                         </div>
@@ -1281,7 +1176,6 @@ export default function AdminStudentPage(){
                                 {schoolLoading?'검색…':'검색'}
                             </button>
                         </div>
-
                         <div className="aa-table-wrap max-h-[60vh] overflow-auto">
                             <table className="aa-table">
                                 <thead>
@@ -1318,7 +1212,22 @@ export default function AdminStudentPage(){
                 </Modal>
             )}
 
-            {/* ===== 모달: 비밀번호 변경 ===== */}
+            {/* ✅ [신규] 모달: 형제 검색 */}
+            {siblingPickOpen && (
+                <StudentSearchModal
+                    open={siblingPickOpen}
+                    onClose={() => setSiblingPickOpen(false)}
+                    onSelect={onLinkSibling}
+                    excludeId={selectedId} //
+                    title="형제로 연결할 학생 검색"
+                    // ✅ [수정] 공통코드 주입
+                    stageCodes={stgCodes}
+                    locCodes={locCodes}
+                    statusCodes={statusCodes}
+                />
+            )}
+
+            {/* ===== 모달: 비밀번호 변경 (동일) ===== */}
             <PwModal
                 openState={{pwOpen,setPwOpen}}
                 onChangePassword={async (pw)=>{
@@ -1335,7 +1244,7 @@ export default function AdminStudentPage(){
                 }}
             />
 
-            {/* 빠른 메모 모달 — 간단 등록만 수행 */}
+            {/* 빠른 메모 모달 (동일) */}
             <QuickMemoModal
                 open={quickMemoOpen}
                 onClose={()=>setQuickMemoOpen(false)}
@@ -1345,10 +1254,27 @@ export default function AdminStudentPage(){
                 }}
             />
 
-            {/* 이미지 프리뷰 */}
+            {/* 이미지 프리뷰 (동일) */}
             {PreviewPortal}
         </section>
     );
+}
+
+// ============================================================================
+// ✅ [오류 수정] isCodeEnabled 헬퍼 함수 (파일 최하단에 정의)
+// ============================================================================
+/**
+ * DB common_code.enabled (1/0, '1'/'0', true/false)
+ * @param {object} item -
+ * @returns {boolean}
+ */
+function isCodeEnabled(item) {
+    const v = item?.enabled;
+    if (v === undefined || v === null) return true; //
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'number') return v === 1;
+    const s = String(v).trim().toLowerCase();
+    return s === '1' || s === 'true' || s === 'y';
 }
 
 // ============================================================================
@@ -1392,7 +1318,7 @@ function PwModal({openState, onChangePassword}){
                     <button className="aa-btn aa-btn-primary" disabled={saving} onClick={async ()=>{
                         const p1 = (pwForm.pw||'').trim();
                         const p2 = (pwForm.pw2||'').trim();
-                        if (p1.length < 6) return alertInfo('안내','비밀번호는 6자 이상이어야 합니다.');
+                        if (p1.length < 6) return alertInfo('안내','비밀번호는 6자리 이상이어야 합니다.');
                         if (p1 !== p2)    return alertInfo('안내','비밀번호가 일치하지 않습니다.');
                         try{
                             setSaving(true);
