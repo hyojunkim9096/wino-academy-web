@@ -1,5 +1,5 @@
 // src/api/studentApi.js
-// ... (기존 import api) ...
+
 import api from './client';
 
 /**
@@ -21,7 +21,10 @@ export const getStudent = (id) =>
 
 /**
  * 학생 생성
- * @param {object} payload - StudentCreateRequest (✅ gender 포함)
+ * @param {object} payload - StudentCreateRequest
+ *   - 프로젝트 기준: name, schoolStage, workLocationCode, birthdate, gender,
+ *     phone, email, postalCode, address, detailAddress, status, schoolId,
+ *     gradeLabel, memo, preferSms/Email/Push, pushUserKey 등
  * @returns {Promise<StudentSummary>}
  */
 export const createStudent = (payload) =>
@@ -30,7 +33,10 @@ export const createStudent = (payload) =>
 /**
  * 학생 수정
  * @param {number} id
- * @param {object} payload - StudentUpdateRequest (✅ gender 포함)
+ * @param {object} payload - StudentUpdateRequest
+ *   - 프로젝트 기준: name, schoolStage, workLocationCode, birthdate, gender,
+ *     phone, email, postalCode, address, detailAddress, status, schoolId,
+ *     gradeLabel, memo, preferSms/Email/Push, pushUserKey 등
  */
 export const updateStudent = (id, payload) =>
     api.put(`/admin/students/${id}`, payload).then(r => r.data);
@@ -53,10 +59,18 @@ export const uploadStudentPhoto = (id, file) => {
     return api.post(`/admin/students/${id}/photo`, fd).then(r => r.data);
 };
 
-// ... (getStudentMeta, lookupAdminUsers는 변경 없음) ...
+/**
+ * 학생 메타 조회 (최초/최종 등록자, 일시 등)
+ * @param {number} id
+ */
 export const getStudentMeta = (id) =>
     api.get(`/admin/students/${id}/meta`).then(r => r.data);
 
+/**
+ * 관리자 유저 이름 조회 (id → name 매핑)
+ * @param {number[]} ids
+ * @returns {Promise<Record<number,string>>}
+ */
 export const lookupAdminUsers = (ids = []) => {
     if (!ids.length) return Promise.resolve({});
     return api.post('/admin/meta/lookup/admin-users', { ids }).then(r => r.data);

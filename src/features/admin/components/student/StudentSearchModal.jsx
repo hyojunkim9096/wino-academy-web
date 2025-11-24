@@ -6,7 +6,7 @@
 // - ✅ [수정] 공통코드 Map을 받아 학부/소속관/상태 '이름' 표시
 // ============================================================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import Modal from '@/components/ui/Modal';
 // ✅ [수정] listStudents (Summary DTO 반환)
 import { listStudents } from '@/api/studentApi';

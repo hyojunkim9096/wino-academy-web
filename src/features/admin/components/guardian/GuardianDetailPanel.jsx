@@ -1,315 +1,556 @@
 // src/features/admin/components/guardian/GuardianDetailPanel.jsx
-import React, { useEffect, useState, useMemo } from 'react';
+// ============================================================================
+// GuardianDetailPanel
+// - 보호자 상세 보기 / 편집 / 삭제
+// - 연결된 학생 목록 표시(listGuardianStudents → StudentLinkSummary DTO)
+// - 형제/가족 동기화 버튼 (syncGuardianFamily 호출)
+// ----------------------------------------------------------------------------
+// Props
+//   - guardianId   : 선택된 보호자 ID (null 이면 안내 문구만 표시)
+//   - onListReload : 상위 목록 재조회 콜백 (저장/삭제/동기화 후 호출)
+// ============================================================================
+
+import React, {
+    useEffect,
+    useState,
+    useCallback
+} from 'react';
+
 import {
     getGuardian,
     updateGuardian,
+    deleteGuardian,
     listGuardianStudents,
-    linkGuardianAccount,
-    unlinkGuardianAccount
+    syncGuardianFamily
 } from '@/api/guardianApi';
-import { alertError, alertInfo, alertSuccess, confirmDialog } from '@/ui/alert';
-import Modal from '@/components/ui/Modal';
-import AddressSearch from '@/components/AddressSearch';
 
-//
-const safeInfo  = (t,m)=>Promise.resolve(alertInfo(t,m)).catch(()=>{});
-const safeOk    = (t,m)=>Promise.resolve(alertSuccess(t,m)).catch(()=>{});
-const safeError = (t,m)=>Promise.resolve(alertError(t,m)).catch(()=>{});
+import {
+    alertInfo,
+    alertError,
+    alertSuccess,
+    askConfirm
+} from '@/ui/alert';
 
-//
-function Field({label, children}){ return <label className="block"><div className="text-sm mb-1 text-slate-300">{label}</div>{children}</label>; }
-function RO({children}){ return <div className="px-3 py-2 rounded border border-slate-700 bg-slate-800">{children ?? '-'}</div>; }
+import '@/styles/admin-system.css';
+import '@/styles/admin-shared.css';
+import '@/styles/admin-guardian.css';
 
-//
-const toEdit = (d)=>({
-    name: d?.name ?? '',
-    phone: d?.phone ?? '',
-    email: d?.email ?? '',
-    postalCode: d?.postalCode ?? '',
-    address: d?.address ?? '',
-    detailAddress: d?.detailAddress ?? '',
-    preferSms: d?.preferSms ?? true,
-    preferEmail: d?.preferEmail ?? false,
-    preferPush: d?.preferPush ?? false,
-    pushUserKey: d?.pushUserKey ?? '',
-    memo: d?.memo ?? ''
-});
+// -----------------------------------------------------------------------------
+// SweetAlert 래퍼를 한 번 더 감싸서,
+// 모달이 실패하더라도 화면 전체가 죽지 않도록 예외 방지
+// -----------------------------------------------------------------------------
+const safeInfo    = (t, m) => Promise.resolve(alertInfo(t, m)).catch(() => {});
+const safeSuccess = (t, m) => Promise.resolve(alertSuccess(t, m)).catch(() => {});
+const safeError   = (t, m) => Promise.resolve(alertError(t, m)).catch(() => {});
 
-/**
- * 보호자 상세/편집 패널
- * @param {object} props
- * @param {number} props.guardianId -
- * @param {function} props.onListReload -
-*/
 export default function GuardianDetailPanel({ guardianId, onListReload }) {
-    const [detail, setDetail]   = useState(null); //
-    const [edit, setEdit]       = useState(null); //
-    const [editing, setEditing] = useState(false);
-    const [saving, setSaving]   = useState(false);
+    // ===========================
+    // 상태 정의
+    // ===========================
+    const [loading, setLoading] = useState(false);     // 상세 조회 로딩
+    const [saving, setSaving] = useState(false);       // 저장/삭제/동기화 등 처리 중
+    const [editMode, setEditMode] = useState(false);   // 편집 모드 여부
 
-    const [students, setStudents] = useState([]); //
-    const [loading, setLoading]   = useState(true);
+    // 서버에서 내려온 원본 guardian 데이터
+    const [model, setModel] = useState(null);
 
-    //
-    const [linkOpen, setLinkOpen] = useState(false);
-    const [linkForm, setLinkForm] = useState({ loginId: '', password: '' });
-    const [linkSaving, setLinkSaving] = useState(false);
+    /**
+     * 연결된 학생 목록
+     * - StudentLinkSummary DTO 리스트
+     *   (StudentGuardianLinkRepository.findStudentSummariesByGuardian)
+     *
+     *   필드 예:
+     *   - id                : 링크 PK
+     *   - studentId         : 학생 PK
+     *   - studentName       : 학생 이름
+     *   - schoolStage       : 학부 코드
+     *   - schoolStageName   : 학부 이름(공통코드)
+     *   - workLocationCode  : 지점 코드
+     *   - workLocationName  : 지점 이름(공통코드)
+     *   - status            : 학생 상태 코드
+     *   - statusName        : 학생 상태 이름(공통코드)
+     *   - relationCode      : 관계 코드
+     *   - relationName      : 관계 이름(공통코드)
+     *   - primary, legalGuardian, receiveNotice, receiveBilling
+     */
+    const [students, setStudents] = useState([]);
 
-    //
+    // 편집용 폼 상태 (model 에서 복사)
+    const [form, setForm] = useState({
+        name: '',
+        phone: '',
+        email: '',
+        loginId: '',
+        memo: ''
+    });
+
+    // ===========================
+    // 상세 + 학생 목록 조회
+    // ===========================
     const loadDetail = useCallback(async () => {
-        if (!guardianId) return;
+        // 선택된 보호자가 없으면 상태 초기화
+        if (!guardianId) {
+            setModel(null);
+            setStudents([]);
+            setForm({
+                name: '',
+                phone: '',
+                email: '',
+                loginId: '',
+                memo: ''
+            });
+            setEditMode(false);
+            return;
+        }
+
         setLoading(true);
         try {
-            const [d, s] = await Promise.all([
+            // guardian 상세 + 연결된 학생 목록 병렬 조회
+            const [guardianRes, studentsRes] = await Promise.all([
                 getGuardian(guardianId),
-                listGuardianStudents(guardianId)
+                listGuardianStudents(guardianId) // → StudentLinkSummary[]
             ]);
-            setDetail(d);
-            setEdit(toEdit(d));
 
-            const rows = Array.isArray(s)?s:(s?.content||[]);
-            rows.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko',{sensitivity:'base'}));
-            setStudents(rows);
+            const guardian = guardianRes || {};
+            const stuList = Array.isArray(studentsRes) ? studentsRes : [];
 
-        } catch(e) {
-            safeError('오류', e?.response?.data?.message || '상세 정보 로드 실패');
-            setDetail(null);
-            setEdit(null);
+            setModel(guardian);
+            setStudents(stuList);
+
+            // 상세 정보를 폼에 반영
+            const {
+                name = '',
+                phone = '',
+                email = '',
+                loginId = '',
+                memo = ''
+            } = guardian;
+
+            setForm({
+                name,
+                phone,
+                email,
+                loginId,
+                memo
+            });
+
+            setEditMode(false);
+        } catch (e) {
+            console.error(e);
+            safeError('오류', e?.response?.data?.message || '보호자 상세 조회 실패');
+            setModel(null);
             setStudents([]);
         } finally {
             setLoading(false);
-            setEditing(false);
         }
     }, [guardianId]);
 
-    //
+    // guardianId 변경 시마다 상세 재조회
     useEffect(() => {
         loadDetail();
     }, [loadDetail]);
 
-    //
-    const onSave = async () => {
-        if (!guardianId || !edit) return;
+    // ===========================
+    // 폼 필드 변경 핸들러
+    // ===========================
+    const handleChange = (field) => (e) => {
+        const value = e.target.value;
+        setForm((prev) => ({
+            ...prev,
+            [field]: value
+        }));
+    };
+
+    // 편집 시작
+    const handleBeginEdit = () => {
+        if (!model) return;
+        setForm({
+            name: model.name || '',
+            phone: model.phone || '',
+            email: model.email || '',
+            loginId: model.loginId || '',
+            memo: model.memo || ''
+        });
+        setEditMode(true);
+    };
+
+    // 편집 취소 (model 기준으로 롤백)
+    const handleCancelEdit = () => {
+        if (!model) {
+            setEditMode(false);
+            return;
+        }
+        setForm({
+            name: model.name || '',
+            phone: model.phone || '',
+            email: model.email || '',
+            loginId: model.loginId || '',
+            memo: model.memo || ''
+        });
+        setEditMode(false);
+    };
+
+    // ===========================
+    // 보호자 정보 저장(수정)
+    // ===========================
+    const handleSave = useCallback(async () => {
+        if (!guardianId || !model) return;
+
+        // 간단한 필수 검증
+        if (!form.name.trim()) {
+            safeError('검증 오류', '이름은 필수입니다.');
+            return;
+        }
+
         setSaving(true);
         try {
-            await updateGuardian(guardianId, edit);
-            await safeOk('성공', '저장되었습니다.');
-            await loadDetail(); //
-            await onListReload?.(); //
+            // 서버에 전달할 payload 구성
+            const payload = {
+                name: form.name.trim(),
+                phone: form.phone?.trim() || null,
+                email: form.email?.trim() || null,
+                memo: form.memo || null
+                // ※ loginId 계정 생성/연결은 별도 API로 처리 (/link-account)
+            };
+
+            await updateGuardian(guardianId, payload);
+
+            // 다시 상세 재조회해서 model 갱신
+            await loadDetail();
+
+            // 상위 목록 재조회 요청
+            if (onListReload) {
+                await Promise.resolve(onListReload());
+            }
+
+            safeSuccess('완료', '보호자 정보가 저장되었습니다.');
         } catch (e) {
-            safeError('오류', e?.response?.data?.message || '저장 실패');
+            console.error(e);
+            safeError('오류', e?.response?.data?.message || '보호자 정보 저장 실패');
         } finally {
             setSaving(false);
         }
-    };
+    }, [guardianId, model, form, onListReload, loadDetail]);
 
-    //
-    const onLinkAccount = async () => {
-        const { loginId, password } = linkForm;
-        if (!loginId?.trim()) return safeInfo('안내', '로그인 ID를 입력하세요.');
-        if (!password?.trim() || password.trim().length < 6) return safeInfo('안내', '비밀번호를 6자리 이상 입력하세요.');
+    // ===========================
+    // 보호자 삭제
+    // ===========================
+    const handleDelete = useCallback(async () => {
+        if (!guardianId) return;
 
-        setLinkSaving(true);
-        try {
-            await linkGuardianAccount(guardianId, { loginId: loginId.trim(), password: password.trim() });
-            await safeOk('성공', '계정이 생성되고 연결되었습니다.');
-            setLinkOpen(false);
-            setLinkForm({ loginId: '', password: '' });
-            await loadDetail();
-            await onListReload?.();
-        } catch (e) {
-            safeError('오류', e?.response?.data?.message || '계정 연결 실패');
-        } finally {
-            setLinkSaving(false);
-        }
-    };
-
-    //
-    const onUnlinkAccount = async () => {
-        const ok = await confirmDialog('연결 해제', '계정 연결을 해제할까요?\n(계정 자체가 삭제되지는 않습니다.)');
+        const ok = await askConfirm(
+            '삭제 확인',
+            '이 보호자를 삭제하시겠습니까?\n연결된 학생/가족 정보가 있다면 백엔드 정책에 따라 제약이 있을 수 있습니다.'
+        );
         if (!ok) return;
 
         setSaving(true);
         try {
-            await unlinkGuardianAccount(guardianId);
-            await safeOk('성공', '계정 연결이 해제되었습니다.');
-            await loadDetail();
-            await onListReload?.();
+            await deleteGuardian(guardianId);
+
+            safeInfo('삭제 완료', '보호자가 삭제되었습니다.');
+
+            // 상위 목록 재조회 → AdminGuardianPage에서 selectedId 재조정
+            if (onListReload) {
+                await Promise.resolve(onListReload());
+            }
+
+            // 현재 패널은 빈 상태로 초기화
+            setModel(null);
+            setStudents([]);
+            setForm({
+                name: '',
+                phone: '',
+                email: '',
+                loginId: '',
+                memo: ''
+            });
+            setEditMode(false);
         } catch (e) {
-            safeError('오류', e?.response?.data?.message || '연결 해제 실패');
+            console.error(e);
+            safeError('오류', e?.response?.data?.message || '보호자 삭제 실패');
         } finally {
             setSaving(false);
         }
-    };
+    }, [guardianId, onListReload]);
 
-    //
-    const onAddressComplete = ({ postalCode, address }) => {
-        setEdit(f => ({ ...f, postalCode: postalCode || '', address: address || '' }));
-    };
+    // ===========================
+    // 형제/가족 동기화
+    // ===========================
+    const handleSyncFamily = useCallback(async () => {
+        if (!guardianId) return;
 
-    if (loading) {
-        return <div>상세 정보 로딩 중…</div>;
+        if (!students || students.length === 0) {
+            safeError('동기화 불가', '연결된 학생이 없습니다.\n먼저 학생과 보호자를 연결한 뒤 다시 시도해 주세요.');
+            return;
+        }
+
+        const names = students.map((s) => s.studentName).join(', ');
+
+        const ok = await askConfirm(
+            '형제/가족 동기화',
+            [
+                '현재 이 보호자와 연결된 학생들을 기준으로 형제/가족 관계를 동기화합니다.',
+                '',
+                `대상 학생: ${names}`,
+                '',
+                '진행하시겠습니까?'
+            ].join('\n')
+        );
+        if (!ok) return;
+
+        setSaving(true);
+        try {
+            // 백엔드에 동기화 요청
+            await syncGuardianFamily(guardianId);
+
+            // 동기화 이후, 학생 목록 재조회
+            await loadDetail();
+
+            // 필요하다면 목록도 다시 불러올 수 있음
+            if (onListReload) {
+                await Promise.resolve(onListReload());
+            }
+
+            safeSuccess('동기화 완료', '형제/가족 정보가 동기화되었습니다.');
+        } catch (e) {
+            console.error(e);
+            safeError('오류', e?.response?.data?.message || '형제/가족 동기화에 실패했습니다.');
+        } finally {
+            setSaving(false);
+        }
+    }, [guardianId, students, onListReload, loadDetail]);
+
+    // ===========================
+    // 렌더링 분기
+    // ===========================
+    if (!guardianId) {
+        return <div className="p-4 text-slate-400">좌측에서 보호자를 선택하세요.</div>;
     }
-    if (!detail || !edit) {
-        return <div>보호자 정보를 불러오지 못했습니다.</div>;
+
+    if (loading && !model) {
+        return <div className="p-4 text-slate-400">보호자 정보를 불러오는 중입니다…</div>;
     }
 
+    if (!model) {
+        return <div className="p-4 text-slate-400">보호자 정보를 찾을 수 없습니다.</div>;
+    }
+
+    const studentRows = Array.isArray(students) ? students : [];
+
+    // ===========================
+    // 실제 UI
+    // ===========================
     return (
-        <div className="space-y-4">
-            <div className="flex justify-between">
-                <div className="text-lg font-semibold">{detail.name}</div>
-                <div className="flex gap-2">
-                    {!editing ? (
-                        <button className="aa-btn aa-btn-primary" onClick={()=>setEditing(true)}>수정</button>
-                    ) : (
-                        <>
-                            <button className="aa-btn" onClick={()=>{ setEdit(toEdit(detail)); setEditing(false); }}>취소</button>
-                            <button className="aa-btn aa-btn-primary" disabled={saving} onClick={onSave}>{saving?'저장 중…':'저장'}</button>
-                        </>
-                    )}
-                </div>
-            </div>
-
-            {/* =======================
-
-              =======================
-            */}
-            <div className="border-t border-slate-700 pt-3">
-                <div className="flex items-center justify-between mb-2">
-                    <div className="text-base font-semibold">계정 정보</div>
-                    {!detail.userId ? (
-                        <button className="aa-btn aa-btn-primary" onClick={() => setLinkOpen(true)} disabled={editing}>
-                            계정 생성/연결
-                        </button>
-                    ) : (
-                        <button className="aa-btn aa-btn-danger" onClick={onUnlinkAccount} disabled={editing || saving}>
-                            계정 연결 해제
-                        </button>
-                    )}
-                </div>
-                {!detail.userId ? (
-                    <RO>연결된 학부모 앱 계정이 없습니다.</RO>
-                ) : (
-                    <div className="grid md:grid-cols-2 gap-3">
-                        <Field label="로그인 ID"><RO>{detail.loginId}</RO></Field>
-                        <Field label="계정 상태"><RO>{detail.userStatus}</RO></Field>
+        <div className="guardian-detail-panel">
+            {/* ---------------------------
+                헤더: 기본 타이틀 + 액션 버튼
+               --------------------------- */}
+            <div className="aa-panel-header flex items-center justify-between mb-4">
+                <div>
+                    <h2 className="aa-subtitle">{model.name || '(이름 없음)'}</h2>
+                    <div className="text-xs text-slate-400 mt-1">
+                        {model.phone || '-'}
+                        {model.email ? ` · ${model.email}` : ''}
+                        {model.loginId ? ` · 로그인ID: ${model.loginId}` : ''}
                     </div>
-                )}
-            </div>
-
-            {/* =======================
-
-              =======================
-            */}
-            <div className="border-t border-slate-700 pt-3">
-                <div className="text-base font-semibold mb-2">기본 정보</div>
-                <div className="guardian-form-grid">
-                    <Field label="이름">{!editing ? <RO>{detail.name}</RO> : <input className="aa-input" value={edit.name} onChange={e=>setEdit(f=>({...f,name:e.target.value}))}/>}</Field>
-                    <Field label="연락처">{!editing ? <RO>{detail.phone || '-'}</RO> : <input className="aa-input" value={edit.phone||''} onChange={e=>setEdit(f=>({...f,phone:e.target.value}))}/>}</Field>
-                    <Field label="이메일">{!editing ? <RO>{detail.email || '-'}</RO> : <input className="aa-input" value={edit.email||''} onChange={e=>setEdit(f=>({...f,email:e.target.value}))}/>}</Field>
-                    <Field label="푸시키">{!editing ? <RO>{detail.pushUserKey || '-'}</RO> : <input className="aa-input" value={edit.pushUserKey||''} onChange={e=>setEdit(f=>({...f,pushUserKey:e.target.value}))}/>}</Field>
-                    <Field label="SMS 동의">{!editing ? <RO>{detail.preferSms? '동의':'미동의'}</RO> : (
-                        <select className="aa-select" value={edit.preferSms?1:0} onChange={e=>setEdit(f=>({...f,preferSms:Number(e.target.value)===1}))}>
-                            <option value={1}>동의</option><option value={0}>미동의</option>
-                        </select>
-                    )}</Field>
-                    <Field label="Email 동의">{!editing ? <RO>{detail.preferEmail? '동의':'미동의'}</RO> : (
-                        <select className="aa-select" value={edit.preferEmail?1:0} onChange={e=>setEdit(f=>({...f,preferEmail:Number(e.target.value)===1}))}>
-                            <option value={1}>동의</option><option value={0}>미동의</option>
-                        </select>
-                    )}</Field>
+                </div>
+                <div className="flex gap-2">
+                    {editMode ? (
+                        <>
+                            <button
+                                type="button"
+                                className="aa-btn aa-btn-primary"
+                                onClick={handleSave}
+                                disabled={saving}
+                            >
+                                {saving ? '저장 중…' : '저장'}
+                            </button>
+                            <button
+                                type="button"
+                                className="aa-btn"
+                                onClick={handleCancelEdit}
+                                disabled={saving}
+                            >
+                                취소
+                            </button>
+                        </>
+                    ) : (
+                        <button
+                            type="button"
+                            className="aa-btn aa-btn-primary"
+                            onClick={handleBeginEdit}
+                            disabled={saving}
+                        >
+                            편집
+                        </button>
+                    )}
+                    <button
+                        type="button"
+                        className="aa-btn aa-btn-danger"
+                        onClick={handleDelete}
+                        disabled={saving}
+                    >
+                        삭제
+                    </button>
                 </div>
             </div>
 
-            {/* =======================
-
-              =======================
-            */}
-            <div className="border-t border-slate-700 pt-3">
-                <div className="text-base font-semibold mb-2">주소</div>
-                <div className="guardian-form-grid">
-                    <div className="md:col-span-2">
-                        <Field label="우편번호">
-                            {!editing ? <RO>{detail.postalCode || '-'}</RO> : (
-                                <div className="flex gap-2">
-                                    <input className="aa-input" value={edit.postalCode||''}
-                                           onChange={e=>setEdit(f=>({...f,postalCode:e.target.value.replace(/[^0-9]/g,'').slice(0,5)}))}
-                                           maxLength={5} inputMode="numeric"/>
-                                    <AddressSearch
-                                        onComplete={onAddressComplete}
-                                        className="aa-btn aa-btn-primary" buttonLabel="우편번호 검색"
-                                    />
+            {/* ---------------------------
+                본문: 기본 정보 / 메모 / 학생 목록
+               --------------------------- */}
+            <div className="aa-panel-body space-y-6">
+                {/* 기본 정보 섹션 */}
+                <section>
+                    <h3 className="aa-section-title mb-3">기본 정보</h3>
+                    <div className="aa-form-grid aa-form-grid-2">
+                        {/* 이름 */}
+                        <div className="aa-form-field">
+                            <label className="aa-field-label">이름</label>
+                            {editMode ? (
+                                <input
+                                    className="aa-input"
+                                    value={form.name}
+                                    onChange={handleChange('name')}
+                                />
+                            ) : (
+                                <div className="aa-field-readonly">
+                                    {model.name || <span className="text-slate-500">-</span>}
                                 </div>
                             )}
-                        </Field>
-                    </div>
-                    <Field label="주소">{!editing ? <RO>{detail.address || '-'}</RO> : <input className="aa-input" value={edit.address||''} readOnly/>}</Field>
-                    <Field label="상세주소">{!editing ? <RO>{detail.detailAddress || '-'}</RO> : <input className="aa-input" value={edit.detailAddress||''} onChange={e=>setEdit(f=>({...f,detailAddress:e.target.value}))}/>}</Field>
-                    <Field label="메모">{!editing ? <RO>{detail.memo || '-'}</RO> : <textarea className="aa-textarea" value={edit.memo||''} onChange={e=>setEdit(f=>({...f,memo:e.target.value}))}/>}</Field>
-                </div>
-            </div>
-
-            {/* =======================
-
-              =======================
-            */}
-            <div className="border-t border-slate-700 pt-3">
-                <div className="text-base font-semibold mb-2">연결된 학생</div>
-                <div className="aa-table-wrap">
-                    <table className="aa-table">
-                        <thead><tr><th>ID</th><th>이름</th><th>학부</th><th>관계</th><th>대표</th></tr></thead>
-                        <tbody>
-                        {students.length===0 && <tr><td colSpan={5}>연결된 학생이 없습니다.</td></tr>}
-                        {students.map(s=>(
-                            <tr key={s.id}>
-                                <td className="aa-cell-mono">{s.studentId || s.id}</td>
-                                <td>{s.name || s.studentName}</td>
-                                <td>{s.schoolStage || '-'}</td>
-                                <td>{s.relationCode || '-'}</td>
-                                <td>{s.primary ? 'Y':'N'}</td>
-                            </tr>
-                        ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            {/* =======================
-
-              =======================
-            */}
-            {linkOpen && detail && (
-                <Modal title="계정 생성/연결" onClose={() => setLinkOpen(false)} size="md">
-                    <div className="space-y-3">
-                        <div className="text-sm text-slate-300">
-                            보호자 <span className="font-semibold">{detail.name}</span> 님의 학부모 앱/웹 로그인 계정을 생성합니다.
                         </div>
-                        <Field label="로그인 ID *">
-                            <input
-                                className="aa-input"
-                                value={linkForm.loginId}
-                                onChange={e=>setLinkForm(f=>({...f, loginId:e.target.value}))}
-                                placeholder="사용할 로그인 ID"
-                            />
-                        </Field>
-                        <Field label="비밀번호 *">
-                            <input
-                                type="password"
-                                className="aa-input"
-                                value={linkForm.password}
-                                onChange={e=>setLinkForm(f=>({...f, password:e.target.value}))}
-                                placeholder="6자리 이상"
-                            />
-                        </Field>
-                        <div className="flex justify-end gap-2">
-                            <button className="aa-btn" onClick={() => setLinkOpen(false)} disabled={linkSaving}>취소</button>
-                            <button className="aa-btn aa-btn-primary" onClick={onLinkAccount} disabled={linkSaving}>
-                                {linkSaving ? "생성 중..." : "생성 및 연결"}
-                            </button>
+
+                        {/* 연락처 */}
+                        <div className="aa-form-field">
+                            <label className="aa-field-label">연락처</label>
+                            {editMode ? (
+                                <input
+                                    className="aa-input"
+                                    value={form.phone}
+                                    onChange={handleChange('phone')}
+                                    placeholder="'-' 없이 숫자만 또는 자유 형식"
+                                />
+                            ) : (
+                                <div className="aa-field-readonly">
+                                    {model.phone || <span className="text-slate-500">-</span>}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 이메일 */}
+                        <div className="aa-form-field">
+                            <label className="aa-field-label">이메일</label>
+                            {editMode ? (
+                                <input
+                                    className="aa-input"
+                                    value={form.email}
+                                    onChange={handleChange('email')}
+                                />
+                            ) : (
+                                <div className="aa-field-readonly">
+                                    {model.email || <span className="text-slate-500">-</span>}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 로그인 ID (표시만) */}
+                        <div className="aa-form-field">
+                            <label className="aa-field-label">로그인 ID</label>
+                            <div className="aa-field-readonly">
+                                {model.loginId || <span className="text-slate-500">(미연결)</span>}
+                            </div>
                         </div>
                     </div>
-                </Modal>
-            )}
+                </section>
+
+                {/* 메모 섹션 */}
+                <section>
+                    <h3 className="aa-section-title mb-3">메모</h3>
+                    {editMode ? (
+                        <textarea
+                            className="aa-input min-h-[80px]"
+                            value={form.memo}
+                            onChange={handleChange('memo')}
+                            placeholder="특이사항, 연락 시 주의점 등을 기록하세요."
+                        />
+                    ) : (
+                        <div className="aa-field-readonly min-h-[40px] whitespace-pre-wrap">
+                            {model.memo || <span className="text-slate-500">-</span>}
+                        </div>
+                    )}
+                </section>
+
+                {/* 연결된 학생 + 형제/가족 동기화 */}
+                <section>
+                    <div className="flex items-center justify-between mb-2">
+                        <h3 className="aa-section-title">연결된 학생</h3>
+                        <button
+                            type="button"
+                            className="aa-btn aa-btn-outline"
+                            onClick={handleSyncFamily}
+                            disabled={saving || studentRows.length === 0}
+                        >
+                            {saving ? '동기화 중…' : '형제/가족 동기화'}
+                        </button>
+                    </div>
+                    <div className="guardian-student-list border border-slate-700 rounded-md overflow-hidden">
+                        {studentRows.length === 0 ? (
+                            <div className="p-3 text-slate-400">
+                                연결된 학생이 없습니다. 학생 상세 화면에서 보호자를 연결해 주세요.
+                            </div>
+                        ) : (
+                            <table className="aa-table w-full text-sm">
+                                <thead>
+                                <tr className="bg-slate-900/60">
+                                    <th className="px-3 py-2 text-left w-32">학생명</th>
+                                    <th className="px-3 py-2 text-left w-24">관계</th>
+                                    <th className="px-3 py-2 text-left w-32">학부</th>
+                                    <th className="px-3 py-2 text-left w-40">지점</th>
+                                    <th className="px-3 py-2 text-left w-32">상태</th>
+                                    <th className="px-3 py-2 text-left w-32">수신</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                {studentRows.map((stu) => (
+                                    <tr key={stu.id} className="border-t border-slate-800">
+                                        <td className="px-3 py-2 truncate">
+                                            {stu.studentName || '-'} (ID: {stu.studentId})
+                                        </td>
+                                        <td className="px-3 py-2 truncate">
+                                            {stu.relationName || stu.relationCode || '-'}
+                                        </td>
+                                        <td className="px-3 py-2 truncate">
+                                            {stu.schoolStageName || stu.schoolStage || '-'}
+                                        </td>
+                                        <td className="px-3 py-2 truncate">
+                                            {stu.workLocationName || stu.workLocationCode || '-'}
+                                        </td>
+                                        <td className="px-3 py-2 truncate">
+                                            {stu.statusName || stu.status || '-'}
+                                        </td>
+                                        <td className="px-3 py-2 truncate text-xs">
+                                            {stu.receiveNotice && (
+                                                <span className="aa-badge aa-badge--ok mr-1">알림</span>
+                                            )}
+                                            {stu.receiveBilling && (
+                                                <span className="aa-badge aa-badge--ok">청구</span>
+                                            )}
+                                            {!stu.receiveNotice && !stu.receiveBilling && (
+                                                <span className="aa-badge aa-badge--muted">-</span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                        ※ 형제/가족 동기화 버튼을 누르면 이 보호자와 연결된 학생들을 기준으로 형제/가족 관계를
+                        자동으로 묶습니다. (정확한 동작은 백엔드 정책에 따릅니다)
+                    </p>
+                </section>
+            </div>
         </div>
     );
 }

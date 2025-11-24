@@ -1,8 +1,6 @@
 // src/features/admin/pages/StaffAdminPage.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { listStaffs, getStaff, updateStaff, changeStaffPassword, uploadStaffPhoto } from '@/api/staffApi';
-// ✅ 1. getCodes
-// import { getCodes } from '@/api/commonCodeAdminApi';
 import { alertError, alertInfo, alertSuccess } from '@/ui/alert';
 import Modal from '@/components/ui/Modal';
 import Avatar from '@/components/ui/Avatar';
@@ -10,31 +8,21 @@ import { useImagePreview } from '@/components/ui/ImagePreview';
 import { uploadsUrl, withBust } from '@/utils/mediaUrl';
 import AddressSearch from '@/components/AddressSearch';
 
-// ✅ 2.
+// ✅ Context 사용
 import { useCommonCodes } from '@/contexts/CommonCodeContext';
 
-//
 import '@/styles/admin-system.css';
 import '@/styles/admin-shared.css';
 import '@/styles/admin-staff.css';
-// (선택)
-import '@/styles/admin.css';
 
 const safeInfo  = (t,m)=>Promise.resolve(alertInfo(t,m)).catch(()=>{});
 const safeOk    = (t,m)=>Promise.resolve(alertSuccess(t,m)).catch(()=>{});
 const safeError = (t,m)=>Promise.resolve(alertError(t,m)).catch(()=>{});
 
-const EMP_TYPES = [
-    { key: 'ALL',     label: '전체' },
-    { key: 'TEACHER', label: '강사' },
-    { key: 'STAFF',   label: '직원' },
-];
-
-// /
+// 코드 배열 → Map 변환 유틸
 const toMap  = (arr=[]) => Object.fromEntries(arr.map(x => [String(x.code).trim().toUpperCase(), x]));
 const sorted = (arr=[]) => arr.slice().sort((a,b)=>(a.sortOrder??0)-(b.sortOrder??0) || String(a.name).localeCompare(b.name,'ko'));
 
-/** */
 function buildPhotoSrc(row){
     if (!row) return '';
     if (row.photoUrl)  return row.photoUrl;
@@ -43,77 +31,57 @@ function buildPhotoSrc(row){
 }
 
 export default function StaffAdminPage() {
-    // =====  =====
+    // ===== 필터 =====
     const [empType, setEmpType]   = useState('ALL');
     const [workLoc, setWorkLoc]   = useState('');
     const [keyword, setKeyword]   = useState('');
     const [kwDebounced, setKwDebounced] = useState('');
 
-    // =====  =====
-    // ✅ 3. API  useCommonCodes
+    // ===== 공통코드 Context 사용 =====
+    // ✅ EMPLOYEE_TYPE 추가 로드
     const { codes: roleCodes,   codeLoading: roleLoading }   = useCommonCodes('ROLE');
     const { codes: statusCodes, codeLoading: statusLoading } = useCommonCodes('ACCOUNT_STATUS');
     const { codes: locCodes,    codeLoading: locLoading }    = useCommonCodes('WORK_LOCATION');
+    const { codes: empTypeCodes,codeLoading: empLoading }    = useCommonCodes('EMPLOYEE_TYPE');
 
+    // 코드 매핑용 Map 생성
     const roleMap   = useMemo(()=>toMap(roleCodes),   [roleCodes]);
     const statusMap = useMemo(()=>toMap(statusCodes), [statusCodes]);
     const locMap    = useMemo(()=>toMap(locCodes),    [locCodes]);
+    const empMap    = useMemo(()=>toMap(empTypeCodes),[empTypeCodes]); // ✅
 
-    // ===== / =====
+    // ===== 목록/상세 =====
     const [list, setList]           = useState([]);
     const [loading, setLoading]     = useState(false);
     const [selectedId, setSelectedId] = useState(null);
 
-    // ===== / =====
+    // ===== 상세/수정 =====
     const [detail, setDetail]   = useState(null);
     const [edit, setEdit]       = useState(null);
     const [editing, setEditing] = useState(false);
     const [saving, setSaving]   = useState(false);
 
-    // =====  =====
+    // ===== 비밀번호 변경 =====
     const [pwOpen, setPwOpen]   = useState(false);
     const [pwForm, setPwForm]   = useState({ pw:'', pw2:'' });
     const [pwSaving, setPwSaving] = useState(false);
 
-    // =====  &  =====
+    // ===== 이미지 프리뷰 =====
     const [imgVersion, setImgVersion] = useState(0);
     const { openPreview, PreviewPortal } = useImagePreview(imgVersion);
 
-    // ===  ===
-    // ✅ 4. API
-    // useEffect(() => {
-    //     let alive = true;
-    //     (async () => {
-    //         try {
-    //             const [r, s, w] = await Promise.all([
-    //                 getCodes('ROLE'),
-    //                 getCodes('ACCOUNT_STATUS'),
-    //                 getCodes('WORK_LOCATION'),
-    //             ]);
-    //             if (!alive) return;
-    //             setRoleCodes(sorted(r||[]));
-    //             setStatusCodes(sorted(s||[]));
-    //             setLocCodes(sorted(w||[]));
-    //         } catch (e) {
-    //             safeError('오류', '공통코드 조회 실패');
-    //         }
-    //     })();
-    //     return ()=>{ alive=false; };
-    // }, []);
-
-    // ===  ===
+    // === 검색어 디바운스 ===
     useEffect(() => {
         const t = setTimeout(() => setKwDebounced(keyword.trim()), 300);
         return () => clearTimeout(t);
     }, [keyword]);
 
-    // ===  ===
+    // === 목록 로드 ===
     const inflight = useRef(0);
     const loadList = useCallback(async (keepSelection=false) => {
         setLoading(true);
         const my = ++inflight.current;
         try {
-            // ⭐ 'ALL'
             const res = await listStaffs({
                 employeeType: empType === 'ALL' ? undefined : empType,
                 workLocation: workLoc || undefined,
@@ -123,11 +91,7 @@ export default function StaffAdminPage() {
 
             if (my !== inflight.current) return;
 
-            // ✅ (/)
-            const rows =
-                Array.isArray(res?.content) ? res.content :
-                    (Array.isArray(res) ? res : []);
-
+            const rows = Array.isArray(res?.content) ? res.content : (Array.isArray(res) ? res : []);
             setList(rows);
             setSelectedId(prev => {
                 if (keepSelection && prev && rows.some(r => r.id === prev)) return prev;
@@ -141,28 +105,26 @@ export default function StaffAdminPage() {
         }
     }, [empType, workLoc, kwDebounced]);
 
-    // ===   ===
     useEffect(() => { loadList(false); }, [loadList]);
 
-    // ===   ===
-    // ✅ 5. locCodes
+    // === 수정 폼 데이터 생성 ===
     const toEdit = useCallback((d) => ({
         userName:         d?.userName ?? '',
         email:            d?.email ?? '',
+        birthdate:        d?.birthdate ?? '',
         phoneNumber:      d?.phoneNumber ?? '',
         emergencyContact: d?.emergencyContact ?? '',
         roleCode:         d?.roleCode ?? 'ROLE_STAFF',
         workLocation:     d?.workLocation ?? (locCodes[0]?.code ?? ''),
         status:           d?.status ?? 'TEMPORARY',
-        // ✅ : employeeType
-        employeeType:     (d?.employeeType === 'TEACHER' || d?.employeeType === 'STAFF') ? d.employeeType : 'STAFF',
-        //
+        // ✅ 공통코드 또는 기본값 사용
+        employeeType:     d?.employeeType ?? (empTypeCodes[0]?.code ?? 'STAFF'),
         postalCode:       d?.postalCode ?? '',
         address:          d?.address ?? '',
         detailAddress:    d?.detailAddress ?? '',
-    }), [locCodes]); // ✅ locCodes
+    }), [locCodes, empTypeCodes]);
 
-    // ===  ( / ) ===
+    // === 상세 조회 ===
     useEffect(() => {
         if (!selectedId) { setDetail(null); setEdit(null); setEditing(false); return; }
         let alive = true;
@@ -171,8 +133,8 @@ export default function StaffAdminPage() {
                 const d = await getStaff(selectedId);
                 if (!alive) return;
                 setDetail(d);
-                // ✅ 6.
-                if (!locLoading && !statusLoading) {
+                // 모든 코드가 로딩 완료되어야 toEdit 기본값이 안전함
+                if (!locLoading && !statusLoading && !empLoading) {
                     setEdit(toEdit(d));
                 }
                 setEditing(false);
@@ -181,9 +143,9 @@ export default function StaffAdminPage() {
             }
         })();
         return ()=>{ alive=false; };
-    }, [selectedId, imgVersion, locLoading, statusLoading, toEdit]); // ✅ toEdit
+    }, [selectedId, imgVersion, locLoading, statusLoading, empLoading, toEdit]);
 
-    // ===  ===
+    // === 저장 ===
     const onSave = async () => {
         if (!selectedId || !edit) return;
         setSaving(true);
@@ -191,6 +153,7 @@ export default function StaffAdminPage() {
             await updateStaff(selectedId, {
                 userName:         edit.userName,
                 email:            edit.email,
+                birthdate:        edit.birthdate || null,
                 phoneNumber:      edit.phoneNumber,
                 emergencyContact: edit.emergencyContact,
                 roleCode:         edit.roleCode,
@@ -212,15 +175,15 @@ export default function StaffAdminPage() {
         } finally { setSaving(false); }
     };
 
-    // ===  ===
+    // === 사진 업로드 ===
     const onUploadPhoto = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
         try {
             await uploadStaffPhoto(selectedId, file);
-            setImgVersion(v => v + 1);              // ✅
-            await loadList(true);                    //
-            const d = await getStaff(selectedId);    //
+            setImgVersion(v => v + 1);
+            await loadList(true);
+            const d = await getStaff(selectedId);
             setDetail(d);
             setEdit(toEdit(d));
             await safeOk('성공', '사진이 변경되었습니다.');
@@ -229,13 +192,22 @@ export default function StaffAdminPage() {
         } finally { e.target.value=''; }
     };
 
+    // === 공통코드 이름 조회 헬퍼 ===
     const locName    = (code) => pickName(locMap, code);
     const roleName   = (code) => pickName(roleMap, code);
     const statusName = (code) => pickName(statusMap, code);
+    const empTypeName= (code) => pickName(empMap, code); // ✅
+
     function pickName(map, code){ return map[String(code||'').toUpperCase()]?.name || code || '-'; }
 
+    const set = (k)=>(e)=>setEdit(f=>({ ...f, [k]: e.target.value }));
+    const onBirthChange = (e) => {
+        const val = e.target.value;
+        if (val && val.split('-')[0].length > 4) return;
+        setEdit(f => ({ ...f, birthdate: val }));
+    };
+
     return (
-        // ✅ staff-page   (admin-staff.css .staff-page … )
         <section className="aa-page staff-page">
             <div className="aa-container">
                 <h1 className="aa-title" style={{marginTop:'0.5rem'}}>직원 관리</h1>
@@ -248,6 +220,7 @@ export default function StaffAdminPage() {
                             workLoc={workLoc} setWorkLoc={setWorkLoc}
                             keyword={keyword} setKeyword={setKeyword}
                             locCodes={locCodes}
+                            empTypeCodes={empTypeCodes} // ✅ 전달
                         />
                         <ListPanel
                             list={list}
@@ -271,25 +244,23 @@ export default function StaffAdminPage() {
                             saving={saving}
                             onUploadPhoto={onUploadPhoto}
                             openPw={()=>setPwOpen(true)}
-                            locCodes={locCodes} roleCodes={roleCodes} statusCodes={statusCodes}
-                            locName={locName} roleName={roleName} statusName={statusName}
+                            // ✅ 코드 목록 전달
+                            locCodes={locCodes} roleCodes={roleCodes} statusCodes={statusCodes} empTypeCodes={empTypeCodes}
+                            // ✅ 이름 변환 함수 전달
+                            locName={locName} roleName={roleName} statusName={statusName} empTypeName={empTypeName}
                             imgVersion={imgVersion}
                             onPreviewImage={(row)=>{
                                 const url = withBust(buildPhotoSrc(row), imgVersion);
-                                try {
-                                    openPreview(row.profileImageId, row.userName, url);
-                                } catch {
-                                    openPreview(row.profileImageId, row.userName);
-                                }
+                                try { openPreview(row.profileImageId, row.userName, url); }
+                                catch { openPreview(row.profileImageId, row.userName); }
                             }}
+                            onBirthChange={onBirthChange}
                         />
                     </div>
                 </div>
             </div>
 
-            {/* */}
             {pwOpen && (
-                // ✅ Modal.jsx(v2) :  (sm)
                 <Modal onClose={()=>setPwOpen(false)} title="비밀번호 변경" size="sm">
                     <PasswordModal
                         pwForm={pwForm} setPwForm={setPwForm}
@@ -315,38 +286,37 @@ export default function StaffAdminPage() {
                     />
                 </Modal>
             )}
-
-            {/* */}
             {PreviewPortal}
         </section>
     );
 }
 
-/* ---------------- :  ---------------- */
-function FilterPanel({ empType, setEmpType, workLoc, setWorkLoc, keyword, setKeyword, locCodes }) {
+/* ---------------- 필터 패널 ---------------- */
+function FilterPanel({ empType, setEmpType, workLoc, setWorkLoc, keyword, setKeyword, locCodes, empTypeCodes }) {
     return (
         <div className="aa-panel p-4 mb-4 space-y-3">
-            {/* */}
             <div className="flex items-center justify-between">
                 <div className="text-sm text-slate-400">대상</div>
                 <div className="flex gap-2">
-                    {EMP_TYPES.map(t => (
+                    <button
+                        type="button"
+                        className={`aa-chip ${empType==='ALL' ? 'aa-chip-on active' : ''}`}
+                        onClick={()=> setEmpType('ALL')}
+                    >전체</button>
+                    {/* ✅ 공통코드로 칩 생성 */}
+                    {sorted(empTypeCodes).map(t => (
                         <button
-                            key={t.key}
+                            key={t.code}
                             type="button"
-                            // ✅  : 'aa-chip-on' + 'active' + aria-pressed
-                            className={`aa-chip ${empType===t.key ? 'aa-chip-on active' : ''}`}
-                            aria-pressed={empType===t.key}
-                            onClick={()=> setEmpType(t.key)}
-                            title={t.label}
-                        >{t.label}</button>
+                            className={`aa-chip ${empType===t.code ? 'aa-chip-on active' : ''}`}
+                            onClick={()=> setEmpType(t.code)}
+                            title={t.name}
+                        >{t.name}</button>
                     ))}
                 </div>
             </div>
 
-            {/* ( +  ) */}
             <div className="flex items-center justify-between gap-3">
-                {/* ✅  + : " " */}
                 <div className="text-sm text-slate-400 whitespace-nowrap min-w-[52px]">소속관</div>
                 <select
                     className="aa-select min-w-[160px]"
@@ -356,12 +326,11 @@ function FilterPanel({ empType, setEmpType, workLoc, setWorkLoc, keyword, setKey
                 >
                     <option value="">전체</option>
                     {sorted(locCodes).map(l => (
-                        <option key={l.code} value={l.code}>{l.name} ({l.code})</option>
+                        <option key={l.code} value={l.code}>{l.name}</option>
                     ))}
                 </select>
             </div>
 
-            {/* */}
             <div>
                 <input
                     className="aa-input w-full"
@@ -374,7 +343,7 @@ function FilterPanel({ empType, setEmpType, workLoc, setWorkLoc, keyword, setKey
     );
 }
 
-/* ---------------- :(순) ---------------- */
+/* ---------------- 목록 패널 ---------------- */
 function ListPanel({ list, loading, selectedId, onSelect, locName, roleName, statusName, imgVersion }) {
     if (loading) return <div className="aa-panel p-4">불러오는 중…</div>;
     if (!list?.length) return <div className="aa-panel p-4">결과가 없습니다.</div>;
@@ -384,7 +353,6 @@ function ListPanel({ list, loading, selectedId, onSelect, locName, roleName, sta
     );
 
     return (
-        // ✅  +
         <div className="aa-panel staff-list-panel divide-y">
             {ordered.map(item => {
                 const selected = selectedId===item.id;
@@ -393,19 +361,13 @@ function ListPanel({ list, loading, selectedId, onSelect, locName, roleName, sta
                     <button
                         key={item.id}
                         type="button"
-                        // ✅  +  +
                         className={`w-full flex items-center gap-3 p-3 text-left transition-colors relative ${selected ? 'bg-slate-800 font-semibold' : 'hover:bg-slate-800/60'}`}
                         onClick={() => onSelect(item.id)}
                         aria-current={selected ? 'true' : 'false'}
                         title={item.userName}
                     >
-                        {/* */}
                         {selected && (
-                            <span
-                                aria-hidden="true"
-                                className="absolute left-0 top-0 h-full"
-                                style={{ width: 3, background: 'var(--aa-accent)' }}
-                            />
+                            <span aria-hidden="true" className="absolute left-0 top-0 h-full" style={{ width: 3, background: 'var(--aa-accent)' }} />
                         )}
                         <Avatar fileId={item.profileImageId} src={src} name={item.userName} version={imgVersion}/>
                         <div className="flex-1 min-w-0">
@@ -423,17 +385,17 @@ function ListPanel({ list, loading, selectedId, onSelect, locName, roleName, sta
     );
 }
 
-/* ---------------- :  ---------------- */
+/* ---------------- 상세 패널 ---------------- */
 function DetailPanel({
                          detail, edit, setEdit, editing, setEditing, onSave, saving, onUploadPhoto,
-                         openPw, locCodes, roleCodes, statusCodes, locName, roleName, statusName, imgVersion, onPreviewImage
+                         openPw, locCodes, roleCodes, statusCodes, empTypeCodes, // ✅
+                         locName, roleName, statusName, empTypeName, // ✅
+                         imgVersion, onPreviewImage, onBirthChange
                      }) {
     if (!detail) return <div className="aa-panel p-6">좌측에서 대상을 선택하세요.</div>;
     const set = (k)=>(e)=>setEdit(f=>({ ...f, [k]: e.target.value }));
-
     const photoSrc = withBust(buildPhotoSrc(detail), imgVersion);
 
-    // :
     const detailAddrRef = useRef(null);
     const onAddressComplete = ({ postalCode, address }) => {
         setEdit(f => ({ ...f, postalCode: postalCode || '', address: address || '' }));
@@ -445,7 +407,6 @@ function DetailPanel({
         <div className="aa-panel p-6 space-y-5">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    {/* : (  ) */}
                     {!editing ? (
                         <Avatar
                             size={80}
@@ -481,16 +442,16 @@ function DetailPanel({
                             <button
                                 className="aa-btn"
                                 onClick={()=>{
-                                    //  (employeeType/)
                                     setEdit({
                                         userName:         detail.userName,
                                         email:            detail.email,
                                         phoneNumber:      detail.phoneNumber,
+                                        birthdate:        detail.birthdate ?? '',
                                         emergencyContact: detail.emergencyContact ?? '',
                                         roleCode:         detail.roleCode,
                                         workLocation:     detail.workLocation,
                                         status:           detail.status,
-                                        employeeType:     (detail.employeeType === 'TEACHER' || detail.employeeType === 'STAFF') ? detail.employeeType : 'STAFF',
+                                        employeeType:     detail.employeeType, // ✅
                                         postalCode:       detail.postalCode ?? '',
                                         address:          detail.address ?? '',
                                         detailAddress:    detail.detailAddress ?? '',
@@ -506,7 +467,7 @@ function DetailPanel({
                 </div>
             </div>
 
-            {/* */}
+            {/* 정보 필드 그리드 */}
             <div className="grid md:grid-cols-2 gap-4">
                 <Field label="이름">
                     {!editing ? <Readonly>{detail.userName}</Readonly>
@@ -516,6 +477,19 @@ function DetailPanel({
                     {!editing ? <Readonly>{detail.email || '-'}</Readonly>
                         : <input className="aa-input w-full" value={edit.email||''} onChange={set('email')} />}
                 </Field>
+                {/* 생년월일 */}
+                <Field label="생년월일">
+                    {!editing ? <Readonly>{detail.birthdate || '-'}</Readonly>
+                        : (
+                            <input
+                                type="date"
+                                className="aa-input w-full"
+                                value={edit.birthdate}
+                                onChange={onBirthChange}
+                                max="9999-12-31"
+                            />
+                        )}
+                </Field>
                 <Field label="연락처">
                     {!editing ? <Readonly>{detail.phoneNumber || '-'}</Readonly>
                         : <input className="aa-input w-full" value={edit.phoneNumber||''} onChange={set('phoneNumber')} />}
@@ -524,58 +498,65 @@ function DetailPanel({
                     {!editing ? <Readonly>{detail.emergencyContact || '-'}</Readonly>
                         : <input className="aa-input w-full" value={edit.emergencyContact||''} onChange={set('emergencyContact')} />}
                 </Field>
+
+                {/* ✅ 소속 관 */}
                 <Field label="소속 관(workLocation)">
                     {!editing ? <Readonly>{locName(detail.workLocation)}</Readonly>
                         : (
                             <select className="aa-select w-full" value={edit.workLocation} onChange={set('workLocation')}>
                                 {sorted(locCodes).map(l=>(
-                                    <option key={l.code} value={l.code}>{l.name} ({l.code})</option>
+                                    <option key={l.code} value={l.code}>{l.name}</option>
                                 ))}
                             </select>
                         )}
                 </Field>
-                {/* (EmployeeType) */}
+
+                {/* ✅ 구분: 공통코드 사용 */}
                 <Field label="구분(EmployeeType)">
                     {!editing ? (
-                        <Readonly>{detail.employeeType === 'TEACHER' ? '강사' : '직원'}</Readonly>
+                        <Readonly>{empTypeName(detail.employeeType)}</Readonly>
                     ) : (
                         <select
                             className="aa-select w-full"
-                            value={edit.employeeType || 'STAFF'}
+                            value={edit.employeeType}
                             onChange={set('employeeType')}
                         >
-                            <option value="STAFF">직원</option>
-                            <option value="TEACHER">강사</option>
+                            {sorted(empTypeCodes).map(t=>(
+                                <option key={t.code} value={t.code}>{t.name}</option>
+                            ))}
                         </select>
                     )}
                 </Field>
+
+                {/* ✅ 상태 */}
                 <Field label="상태(status)">
                     {!editing ? <Readonly>{statusName(detail.status)}</Readonly>
                         : (
                             <select className="aa-select w-full" value={edit.status} onChange={set('status')}>
                                 {sorted(statusCodes).map(s=>(
-                                    <option key={s.code} value={s.code}>{s.name} ({s.code})</option>
+                                    <option key={s.code} value={s.code}>{s.name}</option>
                                 ))}
                             </select>
                         )}
                 </Field>
+
+                {/* ✅ 권한 */}
                 <Field label="권한(ROLE)">
                     {!editing ? <Readonly>{roleName(detail.roleCode)}</Readonly>
                         : (
                             <select className="aa-select w-full" value={edit.roleCode} onChange={set('roleCode')}>
                                 {sorted(roleCodes).map(r=>(
-                                    <option key={r.code} value={r.code}>{r.name} ({r.code})</option>
+                                    <option key={r.code} value={r.code}>{r.name}</option>
                                 ))}
                             </select>
                         )}
                 </Field>
             </div>
 
-            {/* ─────────────────  ───────────────── */}
+            {/* 주소 정보 */}
             <div className="border-t border-slate-700 pt-4 space-y-4">
                 <div className="text-base font-semibold">주소</div>
 
-                {/* + (  )  */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Field label="우편번호">
                         {!editing ? (
@@ -590,7 +571,6 @@ function DetailPanel({
                                     inputMode="numeric"
                                     maxLength={5}
                                 />
-                                {/* AddressSearch: buttonLabel  */}
                                 <AddressSearch
                                     onComplete={onAddressComplete}
                                     className="aa-btn aa-btn-primary whitespace-nowrap"
@@ -602,7 +582,6 @@ function DetailPanel({
                     <div className="hidden md:block" />
                 </div>
 
-                {/* |  */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Field label="주소">
                         {!editing ? (
@@ -637,7 +616,7 @@ function DetailPanel({
     );
 }
 
-/* ----------------   ---------------- */
+/* ---------------- 하위 컴포넌트 ---------------- */
 function Field({ label, children }) {
     return <label className="block"><div className="text-sm mb-1 text-slate-300">{label}</div>{children}</label>;
 }
