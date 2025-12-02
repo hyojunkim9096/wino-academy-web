@@ -14,22 +14,22 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 
-import HomeroomPicker from '@/features/admin/components/HomeroomPicker';
-import TimetableGrid from '@/features/admin/components/timetable/TimetableGrid';
-import TimetableList from '@/features/admin/components/timetable/TimetableList';
-import TimetableFullscreenModal from '@/features/admin/components/timetable/TimetableFullscreenModal';
+import HomeroomPicker from '@/features/member/components/HomeroomPicker.jsx';
+import TimetableGrid from '@/features/course/components/timetable/TimetableGrid';
+import TimetableList from '@/features/course/components/timetable/TimetableList';
+import TimetableFullscreenModal from '@/features/course/components/timetable/TimetableFullscreenModal';
 
-import { listSemesters as listSemestersApi } from '@/api/academySemesterApi';
-import { getTeacherEvents, getAllTeacherEvents } from '@/api/timetableApi';
-import { getStaff } from '@/api/staffApi';
-import { getCodes } from '@/api/commonCodeAdminApi';
-import { alertError } from '@/ui/alert';
+import { listSemesters as listSemestersApi } from '@/features/semester/api/academySemesterApi.js';
+import { getTeacherEvents, getAllTeacherEvents } from '@/features/course/api/timetableApi.js';
+import { getStaff } from '@/features/member/api/staffApi.js';
+import { getCodes } from '@/features/system/api/commonCodeAdminApi.js';
+import { alertError } from '@/common/ui/alert.js';
 
 // 공용 스타일 (순서 유지 권장)
-import '@/styles/admin-system.css';
-import '@/styles/admin-shared.css';
-import '@/styles/admin-academy.css';
-import '@/styles/admin-timetable.css';
+import '@/features/system/styles/admin-system.css';
+import '@/features/admin/styles/admin-shared.css';
+import '@/features/admin/styles/admin-academy.css';
+import '@/features/course/styles/admin-timetable.css';
 
 /* ── 유틸 ───────────────────────────────────────────────────── */
 

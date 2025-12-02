@@ -8,11 +8,11 @@
 
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import AuthLayout from '@/components/layouts/AuthLayout';
+import AuthLayout from '@/common/components/layouts/AuthLayout';
 // ✅ 1. [수정] API
 // import { login, initSessionAfterLogin } from '@/api/authApi';
-import { useAuth } from '@/contexts/AuthContext'; // ✅
-import { alertError } from '@/ui/alert';
+import { useAuth } from '@/common/components/contexts/AuthContext'; // ✅
+import { alertError } from '@/common/ui/alert.js';
 
 function useQuery() {
     const { search } = useLocation();

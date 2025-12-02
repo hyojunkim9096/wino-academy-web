@@ -1,0 +1,17 @@
+/* src/features/semester/styles/admin-semester.css
+   - 행 하이라이트
+   - TeacherPicker는 공용(admin-system.css) 사용
+*/
+
+.semester-page .aa-table tbody tr.on td,
+.semester-page .aa-table tbody tr[aria-selected="true"] td {
+    background: rgba(99, 102, 241, 0.14);
+}
+.semester-page .aa-table tbody tr.on td:first-child,
+.semester-page .aa-table tbody tr[aria-selected="true"] td:first-child {
+    border-left: 3px solid #6366f1;
+}
+.semester-page .aa-table tbody tr.on:hover td,
+.semester-page .aa-table tbody tr[aria-selected="true"]:hover td {
+    background: rgba(99, 102, 241, 0.18);
+}

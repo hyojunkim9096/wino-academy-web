@@ -17,8 +17,8 @@ import ForgotPasswordPage from '@/features/admin/pages/ForgotPasswordPage';
 import ResetPasswordPage from '@/features/admin/pages/ResetPasswordPage';
 import AdminSignUpPage from '@/features/admin/pages/AdminSignUpPage';
 
-import ProtectedRoute from '@/components/router/ProtectedRoute';
-import AdminLayout from '@/features/admin/layouts/AdminLayout';
+import ProtectedRoute from '@/common/components/router/ProtectedRoute';
+import AdminLayout from '@/features/system/layouts/AdminLayout.jsx';
 
 // DB 기반 페이지 동적 로더(메뉴-컴포넌트 매핑)
 import DynamicMenuRenderer from '@/router/DynamicMenuRenderer';

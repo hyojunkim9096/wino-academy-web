@@ -1,7 +1,7 @@
 // src/router/DynamicMenuRenderer.jsx
 import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { getMyMenus } from '@/api/menuApi';             // ⬅️ 변경: getMenuTree → getMyMenus
+import { getMyMenus } from '@/features/menu/api/menuApi.js';             // ⬅️ 변경: getMenuTree → getMyMenus
 import { resolveComponentByKey } from '@/router/dynamicRegistry';
 
 export default function DynamicMenuRenderer() {

@@ -1,9 +1,9 @@
 // 전체 교체
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import AuthLayout from '@/components/layouts/AuthLayout';
-import { confirmPasswordReset } from '@/api/authApi';
-import { alertError, alertSuccess } from '@/ui/alert';
+import AuthLayout from '@/common/components/layouts/AuthLayout';
+import { confirmPasswordReset } from '@/common/api/authApi.js';
+import { alertError, alertSuccess } from '@/common/ui/alert.js';
 
 function ResetPasswordPage() {
     const navigate = useNavigate();

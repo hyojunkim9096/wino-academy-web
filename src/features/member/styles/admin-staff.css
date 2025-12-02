@@ -1,0 +1,91 @@
+/* src/features/member/styles/admin-staff.css
+   ------------------------------------------------------------------
+   직원관리 전용 보강 스타일
+   - 목록 스크롤/선택 하이라이트
+   - 필터 행(라벨 줄바꿈 금지, 정렬)
+   - 대비 높은 입력/셀렉트 톤
+   - staff-page 네임스페이스 하에서만 동작
+   ------------------------------------------------------------------ */
+
+.staff-page .staff-list-panel{
+    max-height: calc(100vh - 18rem);
+    overflow: auto;
+}
+
+/* ✅ 필터 행 레이아웃 + 라벨 줄바꿈 방지 */
+.staff-page .filter-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:.5rem;
+}
+.staff-page .filter-row .label{
+    white-space: nowrap;               /* ← "소속 관" 줄바꿈 방지 */
+    color: var(--aa-muted);
+    font-size: .9rem;
+}
+
+/* ✅ Chips – 선택 가시성 강화 (네임스페이스 스코프) */
+.staff-page .aa-chip{
+    border: 1px solid #334155;
+    background: #0b1220;
+    color: #cbd5e1;
+    border-radius: 999px;
+    padding: .25rem .65rem;
+    font-size: .85rem;
+}
+.staff-page .aa-chip.aa-chip-on{
+    background: #4f46e5;
+    color: #fff;
+    border-color: #4338ca;
+}
+
+/* ✅ select/option 대비 톤 (모달/다크 포함) */
+.staff-page .aa-select{
+    background-color: #0f172a;
+    color: #e2e8f0;
+    border: 1px solid #334155;
+    border-radius: .5rem;
+    padding: .5rem .75rem;
+}
+.staff-page .aa-select:focus{
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99,102,241,.35);
+}
+.staff-page .aa-select option{
+    background: #ffffff;
+    color: #0f172a;
+}
+
+/* ✅ 대비 높은 입력(모달/다크) */
+.staff-page .aa-input-contrast{
+    background-color: #111827;
+    color: #f9fafb;
+    border: 1px solid #4b5563;
+}
+.staff-page .aa-input-contrast:focus{
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99,102,241,.35);
+}
+
+/* ===== 목록 하이라이트(프로젝트 공용 패턴에 맞춤) ===================== */
+/* 프로젝트 기본: .school-list / .school-item / .school-item.on */
+.staff-page .school-list .school-item{
+    cursor: pointer;
+    transition: background-color .15s ease;
+}
+.staff-page .school-list .school-item:hover{
+    background: rgba(148,163,184,.08);
+}
+.staff-page .school-list .school-item.on{
+    /* 선택 가시성 ↑ */
+    background: rgba(99,102,241,.10);
+    outline: 2px solid color-mix(in srgb, var(--aa-accent, #6366f1) 65%, transparent);
+    outline-offset: -2px;
+}
+.staff-page .school-right-badges{
+    display:flex;
+    gap:.35rem;
+    flex-wrap:wrap;
+    align-items:center;
+}

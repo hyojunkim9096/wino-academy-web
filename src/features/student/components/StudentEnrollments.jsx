@@ -1,0 +1,867 @@
+// src/features/student/components/AddEnrollmentModal.jsx
+// ============================================================================
+// StudentEnrollments — 반 배정 탭 전용 컴포넌트
+// ----------------------------------------------------------------------------
+// 백엔드 구조에 맞춘 설계:
+//
+// 1) 반 배정 행 자체는 /api/admin/students/{id}/enrollments 에서 관리
+//    - 생성(POST) / 수정(PUT) / 삭제(DELETE)
+//    - DTO: EnrollmentSummary / EnrollmentCreateRequest / EnrollmentUpdateRequest
+//
+// 2) 수강 요일(attend_days_mask)은 "타임슬롯 매핑" 기준으로 DB 트리거가 자동 집계
+//    - 테이블: student_enroll_timeslot
+//    - API: /api/admin/enrollments/{enrollId}/timeslots (GET/PUT)
+//    - 프런트에서는 replaceEnrollmentTimeslots(enrollId, timeslotIds) 호출
+//
+// 3) MAIN / CROSS
+//    - classStatusCode: MAIN | CROSS
+//    - MAIN: 생성 시 timeslotIds 미전달 → 클래스의 활성 기본 타임슬롯 자동 연결
+//    - CROSS: 생성 시 timeslotIds 없음 → 이후 TimeslotPickerModal 로 타임슬롯 선택
+//
+// 4) 요구사항 반영
+//    - CROSS인 경우, 타임슬롯 선택 모달에서 요일(실제로는 타임슬롯)을 재선택 가능
+//    - 화/목 반의 화요일 수업 하나를 선택하면, 같은 반의 화요일 수업 전체가 함께 선택되도록
+//      → 이 로직은 TimeslotPickerModal 내부에서 dayOfWeek 기준으로 일괄 토글 처리하면 됨.
+//
+// 이 파일에서는 "배정 행"과 "타임슬롯 매핑 호출"까지만 담당하고,
+// 타임슬롯 상세 UI는 TimeslotPickerModal.jsx가 담당한다.
+// ============================================================================
+
+import React, { useEffect, useMemo, useState } from 'react';
+import Modal from '@/common/components/ui/Modal.jsx';
+import { alertError, alertInfo, alertSuccess, confirmDialog } from '@/common/ui/alert.js';
+import { listClassesByPartition } from '@/features/course/api/academyCourseApi.js';
+import {
+    addEnrollmentToStudent,
+    updateStudentEnrollment,
+    removeStudentEnrollment,
+    getActiveEnrollCountsByClassIds,
+    replaceEnrollmentTimeslots,
+} from '@/features/student/api/studentEnrollmentApi.js';
+import TimeslotPickerModal from '@/features/student/components/enrollment/TimeslotPickerModal.jsx';
+
+// ------------------------------ 공통 알림 유틸 ------------------------------
+const safeInfo  = (t, m) => Promise.resolve(alertInfo(t, m)).catch(() => {});
+const safeOk    = (t, m) => Promise.resolve(alertSuccess(t, m)).catch(() => {});
+const safeError = (t, m) => Promise.resolve(alertError(t, m)).catch(() => {});
+
+// ------------------------------ 공통 유틸 ------------------------------
+
+/** 오늘 날짜를 yyyy-MM-dd(en-CA) 형식으로 반환 */
+function localToday() {
+    return new Date().toLocaleDateString('en-CA');
+}
+
+/** 빈 문자열 → undefined 로 정리 (백엔드 DTO에 깔끔히 보내기 위함) */
+function pruneEmpty(obj = {}) {
+    const out = { ...obj };
+    Object.keys(out).forEach((k) => {
+        if (out[k] === '') out[k] = undefined;
+    });
+    return out;
+}
+
+/** 배정 상태 코드(ENROLL_STATUS) → 한글 이름 */
+function useEnrollStatusName(enrollStatusCodes = []) {
+    return (c) => {
+        const code = String(c || '').toUpperCase();
+        const hit  = enrollStatusCodes.find(
+            (x) => String(x.code).toUpperCase() === code
+        );
+        if (hit?.name) return hit.name;
+
+        // 기본 fallback
+        if (code === 'ACTIVE') return '활성';
+        if (code === 'STOP')   return '종료';
+        if (code === 'MOVE')   return '이동';
+        if (code === 'LEFT' || code === 'END') return '종료';
+        return c || '-';
+    };
+}
+
+/**
+ * 특정 지점/학부의 반 이름 캐시
+ * - listClassesByPartition(locCode, stage)로 조회
+ * - classMaster 의 {id,name} 만 map 으로 들고 있다가 화면에서 사용
+ */
+function useClassNameMap(locCode, stage) {
+    const [classMap, setClassMap] = useState({});
+
+    useEffect(() => {
+        let alive = true;
+        (async () => {
+            if (!locCode || !stage) {
+                setClassMap({});
+                return;
+            }
+            try {
+                const rows = await listClassesByPartition(locCode, stage);
+                const map = {};
+                (rows || []).forEach((c) => {
+                    if (c?.id != null) map[c.id] = c.name || String(c.id);
+                });
+                if (!alive) return;
+                setClassMap(map);
+            } catch {
+                setClassMap({});
+            }
+        })();
+        return () => {
+            alive = false;
+        };
+    }, [locCode, stage]);
+
+    const classNameOf = (classId, fallback) =>
+        (classMap && classId in classMap)
+            ? classMap[classId]
+            : (fallback || String(classId ?? '-'));
+
+    return classNameOf;
+}
+
+/** CLASS STATUS 옵션(라벨: "이름 (코드)") */
+function useClassStatusOptions(classStatusCodes = []) {
+    return useMemo(() => {
+        const base =
+            Array.isArray(classStatusCodes) && classStatusCodes.length > 0
+                ? classStatusCodes
+                : [
+                    { code: 'MAIN',  name: '메인' },
+                    { code: 'CROSS', name: '교차' },
+                ];
+
+        return base.map((o) => {
+            const codeUp = String(o.code || '').toUpperCase();
+            const name   = o.name || (codeUp === 'CROSS' ? '교차' : '메인');
+            return {
+                code: codeUp,
+                name,
+                label: `${name} (${codeUp})`,
+            };
+        });
+    }, [classStatusCodes]);
+}
+
+// ============================================================================
+// 메인 컴포넌트
+// ============================================================================
+export default function StudentEnrollments({
+                                               studentId,
+                                               studentDetail,
+                                               enrolls = [],
+                                               enrollStatusCodes = [],
+                                               classStatusCodes = [],
+                                               onReload,
+                                           }) {
+    const [addOpen, setAddOpen]   = useState(false);  // 배정 추가 모달
+    const [editRow, setEditRow]   = useState(null);   // 배정 수정 모달 대상 row
+
+    // 타임슬롯 선택 모달 상태 (CROSS 전용)
+    const [tsModal, setTsModal]   = useState(null);
+
+    // 학생 상태가 ACTIVE 인지 여부 (배정 추가 가능 여부)
+    const isActiveStudent = String(studentDetail?.status || '').toUpperCase() === 'ACTIVE';
+    const locCode         = studentDetail?.workLocationCode || '';
+    const stage           = studentDetail?.schoolStage || '';
+    const gradeCode       = studentDetail?.gradeCode || undefined; // TimeslotPickerModal 참고용(필요 시)
+
+    const statusName      = useEnrollStatusName(enrollStatusCodes);
+    const classNameOf     = useClassNameMap(locCode, stage);
+    const classStatusOpts = useClassStatusOptions(classStatusCodes);
+
+    // 이미 ACTIVE 상태인 반 classId 집합 (동일 반 중복 ACTIVE 금지용)
+    const activeClassIdSet = useMemo(() => {
+        const ids = (enrolls || [])
+            .filter((e) => String(e.status || '').toUpperCase() === 'ACTIVE')
+            .map((e) => e.classId)
+            .filter((v) => v != null);
+        return new Set(ids);
+    }, [enrolls]);
+
+    return (
+        <div className="space-y-2">
+            {/* 상단 버튼 영역 */}
+            <div className="flex gap-2">
+                <button
+                    className="aa-btn aa-btn-primary"
+                    disabled={!isActiveStudent}
+                    title={!isActiveStudent
+                        ? '학생 상태가 재원(ACTIVE)일 때만 배정 추가가 가능합니다.'
+                        : undefined}
+                    onClick={() => {
+                        if (!locCode || !stage) {
+                            return safeInfo('안내', '학생의 소속 관과 학부를 먼저 지정하세요.');
+                        }
+                        setAddOpen(true);
+                    }}
+                >
+                    반 배정
+                </button>
+            </div>
+
+            {/* 배정 목록 테이블 */}
+            <div className="aa-table-wrap max-h-[60vh] overflow-auto">
+                <table className="aa-table">
+                    <thead>
+                    <tr>
+                        <th>반</th>
+                        <th>시작</th>
+                        <th>종료</th>
+                        <th>상태</th>
+                        <th>CLASS</th>
+                        <th>요일(집계)</th>
+                        <th>메모</th>
+                        <th style={{ width: 260 }}></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {enrolls.length === 0 && (
+                        <tr><td colSpan={8}>배정 내역이 없습니다.</td></tr>
+                    )}
+
+                    {enrolls.map((e) => {
+                        const codeUp = String(e.classStatusCode || '').toUpperCase();
+                        const hit    = classStatusOpts.find((x) => x.code === codeUp);
+                        const classStatusLabel =
+                            e.classStatusName // 서버 확장뷰에서 내려온 라벨 우선
+                            || hit?.name
+                            || (codeUp === 'CROSS' ? '교차' : '메인');
+
+                        return (
+                            <tr key={e.id}>
+                                <td className="aa-ellipsis">
+                                    {classNameOf(e.classId, e.className)}
+                                </td>
+                                <td>{e.enrolledAt}</td>
+                                <td>{e.leftAt || '-'}</td>
+                                <td>{statusName(e.status)}</td>
+                                <td>{`${classStatusLabel} (${codeUp || 'MAIN'})`}</td>
+                                <td>{e.attendDaysLabel || '-'}</td>
+                                <td className="aa-ellipsis">{e.memo || '-'}</td>
+                                <td className="text-right">
+                                    <div className="aa-actions">
+                                        {/* 배정 수정: 날짜/상태/메모/CLASS STATUS 수정 */}
+                                        <button
+                                            className="aa-btn aa-btn-sm"
+                                            onClick={() =>
+                                                setEditRow({
+                                                    id: e.id,
+                                                    classId: e.classId,
+                                                    className: classNameOf(e.classId, e.className),
+                                                    enrolledAt: (e.enrolledAt || '').slice(0, 10),
+                                                    leftAt: (e.leftAt || '').slice(0, 10),
+                                                    memo: e.memo || '',
+                                                    status: e.status || 'ACTIVE',
+                                                    classStatusCode: codeUp || 'MAIN',
+                                                })
+                                            }
+                                        >
+                                            수정
+                                        </button>
+
+                                        {/* CROSS일 때만 타임슬롯 선택 버튼 노출
+                                            - 여기서 TimeslotPickerModal 을 띄워
+                                              "요일(실제로는 timeslot) 재선택" 을 한다.
+                                            - 화/목 반 등에서 "화요일 슬롯 하나 선택 → 화요일 전체 선택"
+                                              로직은 TimeslotPickerModal 내부에서 구현 */}
+                                        {codeUp === 'CROSS' && (
+                                            <button
+                                                className="aa-btn aa-btn-sm"
+                                                onClick={() => {
+                                                    setTsModal({
+                                                        enrollId: e.id,
+                                                        classId: e.classId,
+                                                        locCode,
+                                                        stage,
+                                                        gradeCode,
+                                                    });
+                                                }}
+                                            >
+                                                타임슬롯
+                                            </button>
+                                        )}
+
+                                        {/* 배정 삭제 */}
+                                        <button
+                                            className="aa-btn aa-btn-danger aa-btn-sm"
+                                            onClick={async () => {
+                                                const ok = await confirmDialog(
+                                                    '배정 삭제',
+                                                    `${classNameOf(e.classId, e.className)} 배정을 삭제할까요?`,
+                                                    {
+                                                        confirmText: '삭제',
+                                                        cancelText: '취소',
+                                                        confirmColor: '#ef4444',
+                                                    }
+                                                );
+                                                if (!ok) return;
+                                                try {
+                                                    await removeStudentEnrollment(studentId, e.id);
+                                                    await safeOk('성공', '배정이 삭제되었습니다.');
+                                                    await onReload?.();
+                                                } catch (err) {
+                                                    safeError(
+                                                        '오류',
+                                                        err?.response?.data?.message || '배정 삭제 실패'
+                                                    );
+                                                }
+                                            }}
+                                        >
+                                            삭제
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        );
+                    })}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* 배정 추가 모달 */}
+            {addOpen && (
+                <AddEnrollmentModal
+                    locCode={locCode}
+                    stage={stage}
+                    classStatusOptions={classStatusOpts}
+                    activeClassIds={activeClassIdSet}
+                    onClose={() => setAddOpen(false)}
+                    onSubmit={async ({ classId, enrolledAt, classStatusCode }) => {
+                        const TODAY = localToday();
+                        if (!enrolledAt || enrolledAt < TODAY) {
+                            return safeInfo('안내', '시작일은 오늘 이후만 선택할 수 있습니다.');
+                        }
+                        if (activeClassIdSet.has(classId)) {
+                            return safeInfo('안내', '이미 해당 반에 ACTIVE 배정이 존재합니다.');
+                        }
+
+                        try {
+                            // ✅ timeslotIds는 전달하지 않는다.
+                            //   - MAIN: StudentEnrollmentService가 자동으로 반의 활성 기본 타임슬롯 연결
+                            //   - CROSS: 타임슬롯 없이 배정만 생성 → 아래에서 TimeslotPickerModal 오픈
+                            const enrollId = await addEnrollmentToStudent(
+                                studentId,
+                                pruneEmpty({
+                                    classId,
+                                    enrolledAt,
+                                    classStatusCode,
+                                })
+                            );
+
+                            // CROSS라면 배정 생성 직후 타임슬롯 선택 모달 오픈
+                            if (String(classStatusCode).toUpperCase() === 'CROSS') {
+                                setAddOpen(false);
+                                setTsModal({
+                                    enrollId,
+                                    classId,
+                                    locCode,
+                                    stage,
+                                    gradeCode,
+                                });
+                                return;
+                            }
+
+                            await safeOk('성공', '배정이 추가되었습니다.');
+                            setAddOpen(false);
+                            await onReload?.();
+                        } catch (e) {
+                            const st = e?.response?.status;
+                            if (st === 409) {
+                                return safeInfo('중복', '이미 해당 반에 ACTIVE 배정이 존재합니다.');
+                            }
+                            safeError(
+                                '오류',
+                                e?.response?.data?.message || '배정 추가 실패'
+                            );
+                        }
+                    }}
+                />
+            )}
+
+            {/* 배정 수정 모달 */}
+            {editRow && (
+                <EditEnrollmentModal
+                    row={editRow}
+                    classStatusOptions={classStatusOpts}
+                    enrollStatusCodes={enrollStatusCodes}
+                    onClose={() => setEditRow(null)}
+                    onSubmit={async (form) => {
+                        // 종료일이 시작일보다 이전일 수 없음
+                        if (
+                            form.enrolledAt &&
+                            form.leftAt &&
+                            String(form.leftAt) < String(form.enrolledAt)
+                        ) {
+                            return safeInfo(
+                                '안내',
+                                '종료일은 시작일보다 이전일 수 없습니다.'
+                            );
+                        }
+
+                        try {
+                            // 수정은 날짜/상태/메모/CLASS STATUS 만 전달
+                            // 타임슬롯 교체는 TimeslotPickerModal(타임슬롯 버튼)에서 별도 수행
+                            await updateStudentEnrollment(
+                                studentId,
+                                editRow.id,
+                                pruneEmpty({
+                                    leftAt: form.leftAt || null,
+                                    memo: form.memo || null,
+                                    status: form.status || null,
+                                    classStatusCode: form.classStatusCode || null,
+                                })
+                            );
+                            await safeOk('성공', '배정이 수정되었습니다.');
+                            setEditRow(null);
+                            await onReload?.();
+                        } catch (e) {
+                            const st = e?.response?.status;
+                            if (st === 409) {
+                                return safeInfo(
+                                    '중복',
+                                    '이미 해당 반에 ACTIVE 배정이 존재합니다.'
+                                );
+                            }
+                            safeError(
+                                '오류',
+                                e?.response?.data?.message || '반 수정 실패'
+                            );
+                        }
+                    }}
+                />
+            )}
+
+            {/* 타임슬롯 선택 모달 (CROSS 전용) */}
+            {tsModal && (
+                <TimeslotPickerModal
+                    title="타임슬롯 선택"
+                    studentId={studentId}
+                    classId={tsModal.classId}
+                    locCode={tsModal.locCode}
+                    stage={tsModal.stage}
+                    gradeCode={tsModal.gradeCode}
+                    enrollmentId={tsModal.enrollId}
+                    onClose={() => setTsModal(null)}
+                    onSubmit={async (ids) => {
+                        try {
+                            // ✅ 타임슬롯 전체 치환
+                            await replaceEnrollmentTimeslots(tsModal.enrollId, ids);
+                            await safeOk('성공', '타임슬롯이 저장되었습니다.');
+                            setTsModal(null);
+                            await onReload?.();
+                        } catch (e) {
+                            safeError(
+                                '오류',
+                                e?.response?.data?.message || '타임슬롯 저장 실패'
+                            );
+                        }
+                    }}
+                />
+            )}
+        </div>
+    );
+}
+
+// ============================================================================
+// 배정 추가 모달
+//  - 반 목록 + 시작일 + CLASS STATUS 선택
+//  - MAIN/CROSS 관계없이 "배정 행"만 생성
+//    · MAIN: 백엔드에서 기본 타임슬롯 자동 연결
+//    · CROSS: 이후 타임슬롯 모달로 요일/타임슬롯 선택
+// ============================================================================
+function AddEnrollmentModal({
+                                locCode,
+                                stage,
+                                classStatusOptions = [],
+                                activeClassIds = new Set(),
+                                onClose,
+                                onSubmit,
+                            }) {
+    const TODAY = useMemo(() => localToday(), []);
+    const [loading, setLoading]       = useState(false);
+    const [list, setList]             = useState([]);   // 반 목록
+    const [selId, setSelId]           = useState(null); // 선택된 classId
+    const [counts, setCounts]         = useState({});   // classId → ACTIVE 현재원 수
+    const [enrollDate, setEnrollDate] = useState(TODAY);
+
+    const [classStatusCode, setClassStatusCode] = useState('MAIN');
+
+    useEffect(() => {
+        let alive = true;
+        (async () => {
+            setLoading(true);
+            try {
+                // 지점/학부 기준 반 목록
+                const rows = await listClassesByPartition(locCode, stage);
+                const sorted = (rows || []).slice().sort(
+                    (a, b) =>
+                        (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
+                        (a.name || '').localeCompare(b.name || '', 'ko')
+                );
+
+                // 각 반의 ACTIVE 배정 수 조회
+                const ids = sorted.map((c) => c.id).filter((v) => v != null);
+                let cntMap = {};
+                if (ids.length > 0) {
+                    try {
+                        cntMap = await getActiveEnrollCountsByClassIds(ids);
+                    } catch {
+                        cntMap = {};
+                    }
+                }
+
+                if (!alive) return;
+                setList(sorted);
+                setCounts(cntMap);
+
+                // 기본 선택: 정원 초과X, 이미 ACTIVE 배정X 인 첫 번째 반
+                const firstOk =
+                    sorted.find((c) => {
+                        const curr = cntMap?.[c.id] ?? 0;
+                        const cap  = Number.isFinite(c.capacity) ? c.capacity : null;
+                        const full = cap != null && curr >= cap;
+                        return !full && !activeClassIds.has(c.id);
+                    })?.id ?? null;
+                setSelId(firstOk);
+            } catch {
+                setList([]);
+                setCounts({});
+                safeError('오류', '반 목록 조회 실패');
+            } finally {
+                setLoading(false);
+            }
+        })();
+        return () => {
+            alive = false;
+        };
+    }, [locCode, stage, activeClassIds]);
+
+    return (
+        <Modal title="반 배정" onClose={onClose} size="lg">
+            <div className="space-y-3 add-enroll">
+                {/* 반 목록 테이블 */}
+                <div className="aa-table-wrap max-h-[50vh] md:max-h-[60vh] overflow-auto">
+                    <table className="aa-table">
+                        <thead>
+                        <tr>
+                            <th style={{ width: 60 }}></th>
+                            <th>반 이름</th>
+                            <th>코드</th>
+                            <th>현재원/정원</th>
+                            <th>상태</th>
+                            <th style={{ width: 180 }}>비고</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {loading && <tr><td colSpan={6}>불러오는 중…</td></tr>}
+                        {!loading && list.length === 0 && (
+                            <tr><td colSpan={6}>반이 없습니다.</td></tr>
+                        )}
+
+                        {list.map((c) => {
+                            const curr = counts?.[c.id] ?? 0;
+                            const cap  = Number.isFinite(c.capacity) ? c.capacity : null;
+                            const full = cap != null && curr >= cap;
+                            const alreadyActive = activeClassIds.has(c.id);
+
+                            return (
+                                <tr
+                                    key={c.id}
+                                    className={`hover:bg-slate-800/60 ${
+                                        full || alreadyActive ? 'opacity-75' : ''
+                                    }`}
+                                >
+                                    <td>
+                                        <input
+                                            type="radio"
+                                            name="classSel"
+                                            checked={selId === c.id}
+                                            onChange={() => setSelId(c.id)}
+                                            disabled={full || alreadyActive}
+                                            title={
+                                                alreadyActive
+                                                    ? '이미 이 반에 ACTIVE 배정이 있습니다.'
+                                                    : (full
+                                                        ? '정원 초과로 선택할 수 없습니다.'
+                                                        : undefined)
+                                            }
+                                        />
+                                    </td>
+                                    <td className="aa-ellipsis">{c.name}</td>
+                                    <td className="aa-cell-mono">{c.code}</td>
+                                    <td className={full ? 'text-red-400 font-semibold' : ''}>
+                                        {curr} / {cap ?? '-'}
+                                    </td>
+                                    <td>{c.status}</td>
+                                    <td>
+                                        {alreadyActive && (
+                                            <span className="aa-badge aa-badge--warn">
+                                                현재 소속 반
+                                            </span>
+                                        )}
+                                        {full && (
+                                            <span className="aa-badge aa-badge--muted ml-1">
+                                                정원 초과
+                                            </span>
+                                        )}
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* 시작일 + CLASS STATUS 선택 */}
+                <div className="grid md:grid-cols-2 gap-3">
+                    <label className="block">
+                        <div className="text-sm mb-1 text-slate-300">시작일</div>
+                        <input
+                            className="aa-input"
+                            type="date"
+                            value={enrollDate}
+                            min={TODAY}
+                            onChange={(e) => {
+                                const v = e.target.value;
+                                setEnrollDate(!v || v < TODAY ? TODAY : v);
+                            }}
+                        />
+                    </label>
+                    <label className="block">
+                        <div className="text-sm mb-1 text-slate-300">CLASS STATUS</div>
+                        <select
+                            className="aa-select"
+                            value={classStatusCode}
+                            onChange={(e) => setClassStatusCode(e.target.value)}
+                        >
+                            {classStatusOptions.map((o) => (
+                                <option key={o.code} value={o.code}>
+                                    {o.label}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                </div>
+
+                <div className="flex justify-between items-center pt-2">
+                    <div className="text-xs text-slate-400">
+                        * 현재원은 ACTIVE 배정 건수 기준입니다.
+                    </div>
+                    <div className="flex gap-2">
+                        <button className="aa-btn" onClick={onClose}>
+                            취소
+                        </button>
+                        <button
+                            className="aa-btn aa-btn-primary"
+                            disabled={!selId || !enrollDate}
+                            onClick={() => {
+                                const selected = list.find((x) => x.id === selId);
+                                if (!selected) return;
+
+                                if (activeClassIds.has(selId)) {
+                                    return safeInfo(
+                                        '안내',
+                                        '이미 해당 반에 ACTIVE 배정이 존재합니다.'
+                                    );
+                                }
+
+                                const curr = counts?.[selected.id] ?? 0;
+                                const cap  = Number.isFinite(selected.capacity)
+                                    ? selected.capacity
+                                    : null;
+                                if (cap != null && curr >= cap) {
+                                    return safeInfo(
+                                        '안내',
+                                        '해당 반은 정원 초과되어 선택할 수 없습니다.'
+                                    );
+                                }
+
+                                onSubmit?.({
+                                    classId: selId,
+                                    enrolledAt: enrollDate,
+                                    classStatusCode,
+                                });
+                            }}
+                        >
+                            배정
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </Modal>
+    );
+}
+
+// ============================================================================
+// 배정 수정 모달
+//  - 시작/종료일, 상태, CLASS STATUS, 메모 수정
+//  - 타임슬롯 변경은 목록의 "타임슬롯" 버튼(=TimeslotPickerModal)에서 처리
+// ============================================================================
+function EditEnrollmentModal({
+                                 row,
+                                 classStatusOptions = [],
+                                 enrollStatusCodes = [],
+                                 onClose,
+                                 onSubmit,
+                             }) {
+    const [form, setForm] = useState({
+        enrolledAt: row?.enrolledAt || '',
+        leftAt:     row?.leftAt || '',
+        memo:       row?.memo || '',
+        status:     row?.status || 'ACTIVE',
+        classStatusCode: row?.classStatusCode || 'MAIN',
+    });
+
+    useEffect(() => {
+        setForm({
+            enrolledAt: row?.enrolledAt || '',
+            leftAt:     row?.leftAt || '',
+            memo:       row?.memo || '',
+            status:     row?.status || 'ACTIVE',
+            classStatusCode: row?.classStatusCode || 'MAIN',
+        });
+    }, [row]);
+
+    // 상태 선택 옵션
+    const statusOptions = useMemo(() => {
+        const arr = Array.isArray(enrollStatusCodes) ? enrollStatusCodes : [];
+        if (arr.length > 0) return arr;
+        return [
+            { code: 'ACTIVE', name: '활성' },
+            { code: 'STOP',   name: '종료' },
+            { code: 'MOVE',   name: '이동' },
+        ];
+    }, [enrollStatusCodes]);
+
+    const leftMin = useMemo(() => form.enrolledAt || '', [form.enrolledAt]);
+
+    return (
+        <Modal title={`반 수정 — ${row?.className || ''}`} onClose={onClose} size="lg">
+            <div className="space-y-3">
+                <Field label="반">
+                    <RO>{row?.className || '-'}</RO>
+                </Field>
+
+                <div className="grid md:grid-cols-2 gap-3">
+                    <Field label="시작일">
+                        <input
+                            type="date"
+                            className="aa-input"
+                            value={form.enrolledAt || ''}
+                            onChange={(e) => {
+                                const v = e.target.value;
+                                setForm((f) => {
+                                    const nextStart = v || '';
+                                    const nextLeft =
+                                        f.leftAt && nextStart && f.leftAt < nextStart
+                                            ? nextStart
+                                            : f.leftAt;
+                                    return {
+                                        ...f,
+                                        enrolledAt: nextStart,
+                                        leftAt: nextLeft,
+                                    };
+                                });
+                            }}
+                        />
+                    </Field>
+                    <Field label="종료일">
+                        <input
+                            type="date"
+                            className="aa-input"
+                            value={form.leftAt || ''}
+                            min={leftMin || undefined}
+                            onChange={(e) => {
+                                const v = e.target.value;
+                                setForm((f) => ({ ...f, leftAt: v || '' }));
+                            }}
+                        />
+                    </Field>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-3">
+                    <Field label="상태">
+                        <select
+                            className="aa-select"
+                            value={form.status || 'ACTIVE'}
+                            onChange={(e) => {
+                                const v = e.target.value;
+                                setForm((f) => {
+                                    const nextLeft = v === 'ACTIVE' ? '' : f.leftAt;
+                                    return { ...f, status: v, leftAt: nextLeft };
+                                });
+                            }}
+                        >
+                            {statusOptions.map((s) => (
+                                <option key={s.code} value={s.code}>
+                                    {s.name} ({s.code})
+                                </option>
+                            ))}
+                        </select>
+                    </Field>
+
+                    <Field label="CLASS STATUS">
+                        <select
+                            className="aa-select"
+                            value={form.classStatusCode || 'MAIN'}
+                            onChange={(e) =>
+                                setForm((f) => ({
+                                    ...f,
+                                    classStatusCode: e.target.value,
+                                }))
+                            }
+                        >
+                            {classStatusOptions.map((o) => (
+                                <option key={o.code} value={o.code}>
+                                    {o.label}
+                                </option>
+                            ))}
+                        </select>
+                    </Field>
+                </div>
+
+                <Field label="메모">
+                    <textarea
+                        className="aa-textarea"
+                        rows={4}
+                        value={form.memo || ''}
+                        onChange={(e) =>
+                            setForm((f) => ({ ...f, memo: e.target.value }))
+                        }
+                    />
+                </Field>
+
+                <div className="flex justify-end gap-2 pt-2">
+                    <button className="aa-btn" onClick={onClose}>
+                        취소
+                    </button>
+                    <button
+                        className="aa-btn aa-btn-primary"
+                        onClick={() => onSubmit?.(form)}
+                    >
+                        저장
+                    </button>
+                </div>
+            </div>
+        </Modal>
+    );
+}
+
+// ============================================================================
+// 공용 표시용 Field / RO 컴포넌트
+// ============================================================================
+function Field({ label, children }) {
+    return (
+        <label className="block">
+            <div className="text-sm mb-1 text-slate-300">{label}</div>
+            {children}
+        </label>
+    );
+}
+function RO({ children }) {
+    return (
+        <div className="px-3 py-2 rounded border border-slate-700 bg-slate-800">
+            {children ?? '-'}
+        </div>
+    );
+}

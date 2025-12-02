@@ -1,0 +1,166 @@
+/* src/features/finance/styles/admin-billing.css
+   ============================================================================
+   BillingConsolePage 전용 스타일 (v2.6)
+   - JS가 주입한 --bp-topbar 사용(sticky)
+   - 겹침 방지: 그리드 트랙/최소폭/오버플로 보정
+   - 반응형: 1480/1280/1024 단계
+   - Stage/지점 active 대비 강화
+   - ✅ 인라인 폼(가격표 | 시작월 | 등록) + 오른쪽 콘솔 2열/1열 전환 추가
+   ========================================================================== */
+
+.billing-page {
+    --bp-panel: var(--aa-panel, #0f172a);
+    --bp-bg: var(--aa-bg, #0b1220);
+    --bp-border: var(--aa-border, #334155);
+    --bp-text: var(--aa-text, #e5e7eb);
+    --bp-muted: var(--aa-muted, #94a3b8);
+    --bp-accent: var(--aa-accent, #6366f1);
+
+    --bp-accent-weak: rgba(99,102,241,0.18);
+    --bp-topbar: 64px;               /* JS 주입 전 기본값 */
+
+    --bp-left-min: 280px;
+    --bp-left-max: 420px;
+    --bp-left-vw: 32vw;
+}
+
+@supports (color: color-mix(in srgb, white, black)) {
+    .billing-page { --bp-accent-weak: color-mix(in srgb, var(--bp-accent) 18%, white); }
+}
+
+/* 좌/우 레이아웃 */
+.billing-page .billing-split{
+    display:grid;
+    grid-template-columns: clamp(var(--bp-left-min), var(--bp-left-vw), var(--bp-left-max)) minmax(0,1fr);
+    gap:1rem; align-items:start;
+}
+@media (max-width:1480px){
+    .billing-page .billing-split{
+        grid-template-columns: clamp(260px, 34vw, 380px) minmax(0,1fr);
+    }
+}
+@media (max-width:1280px){
+    .billing-page .billing-split{
+        grid-template-columns: clamp(240px, 36vw, 340px) minmax(0,1fr);
+    }
+}
+@media (max-width:1024px){
+    .billing-page .billing-split{ grid-template-columns: 1fr; }
+}
+
+/* 좌측 sticky */
+.billing-page .billing-left{
+    position: sticky;
+    top: calc(var(--bp-topbar) + .5rem);
+    align-self: flex-start;
+    display: grid;
+    gap: .75rem;
+    z-index: 0;
+}
+
+/* 카드 기본 톤 */
+.billing-page .aa-card{
+    background: var(--bp-panel);
+    color: var(--bp-text);
+    border: 1px solid var(--bp-border);
+    border-radius: .75rem;
+}
+
+/* 목록 스크롤 */
+.billing-page .list-scroll{
+    max-height: calc(100vh - (var(--bp-topbar) + 12rem));
+    overflow: auto;
+    scrollbar-gutter: stable;
+}
+
+/* 라벨/입력 */
+.billing-page .f-label{ font-size:.9rem; color:var(--bp-muted); white-space:nowrap; }
+.billing-page .aa-input, .billing-page .aa-select{
+    color:var(--bp-text);
+    background:var(--bp-panel);
+    border-color:var(--bp-border);
+}
+
+/* Stage 탭 */
+.billing-page .aa-seg{ display:inline-flex; gap:.25rem; }
+.billing-page .aa-seg > button{
+    border:1px solid var(--bp-border);
+    padding:.35rem .7rem; border-radius:.5rem;
+    background:var(--bp-panel); color:var(--bp-text); cursor:pointer;
+}
+.billing-page .aa-seg > button.active{
+    background: var(--bp-accent); color:#fff; border-color: var(--bp-accent); font-weight:600;
+}
+
+/* 지점 태그 */
+.billing-page .branch-cloud{ display:flex; flex-wrap:wrap; gap:.35rem; min-height:2.25rem; }
+.billing-page .branch-cloud .tag{
+    border:1px solid var(--bp-border); padding:.25rem .5rem; border-radius:.5rem;
+    background:var(--bp-panel); color:var(--bp-text); cursor:pointer; font-size:.9rem;
+}
+.billing-page .branch-cloud .tag.active{
+    background: var(--bp-accent); color:#fff; border-color: var(--bp-accent); font-weight:600;
+}
+
+/* 테이블 공통 */
+.billing-page .aa-table-wrap{
+    overflow:auto; border:1px solid var(--bp-border); border-radius:.5rem; background:var(--bp-panel);
+}
+.billing-page .aa-table thead th{
+    position:sticky; top:0; z-index:1; background:var(--bp-panel); color:var(--bp-text); border-bottom:1px solid var(--bp-border);
+}
+.billing-page .aa-table td{ color:var(--bp-text); border-bottom:1px solid var(--bp-border); }
+.billing-page .aa-subtle{ color:var(--bp-muted); }
+.billing-page .badge{
+    display:inline-block; padding:.1rem .5rem; border-radius:.5rem; border:1px solid var(--bp-border);
+    font-size:.8rem; background:var(--bp-panel); color:var(--bp-text);
+}
+.billing-page .badge-green{ background:#064e3b; border-color:#10b981; color:#d1fae5; }
+.billing-page .badge-red{ background:#7f1d1d; border-color:#ef4444; color:#fee2e2; }
+
+.billing-page .right-actions{ display:flex; gap:.5rem; }
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* ✅ 오른쪽 콘솔 그리드: 가로(2열) ↔ 세로(1열) 전환                          */
+/* ────────────────────────────────────────────────────────────────────────── */
+.billing-page .tuition-host .tuition-grid{
+    display:grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr);
+    gap:1rem; align-items:start;
+}
+@media (max-width:1480px){
+    .billing-page .tuition-host .tuition-grid{ grid-template-columns: 1fr; }
+}
+@media (max-width:1024px){
+    .billing-page .tuition-host .tuition-grid{ grid-template-columns: 1fr; }
+}
+/* 강제 세로 모드(리액트에서 .is-vertical 클래스로 토글) */
+.billing-page .tuition-host.is-vertical .tuition-grid{
+    grid-template-columns: 1fr !important;
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* ✅ 인라인 폼(가격표 | 시작월 | 등록)                                       */
+/* ────────────────────────────────────────────────────────────────────────── */
+.billing-page .inline-row{
+    display:grid;
+    grid-template-columns: minmax(0,1fr) auto auto; /* 가격표 늘리고, 시작월/버튼은 고정 */
+    gap:.75rem; align-items:end; margin-bottom:.75rem;
+}
+@media (max-width:1024px){
+    .billing-page .inline-row{ grid-template-columns: 1fr; }
+}
+.billing-page .mini-field{ display:block; }
+.billing-page .mini-label{ font-size:.85rem; color:var(--bp-muted); margin-bottom:.35rem; white-space:nowrap; }
+.billing-page .mini-hint{ margin-top:.35rem; color:var(--bp-muted); font-size:.8rem; }
+.billing-page .mini-actions{ display:flex; align-items:end; }
+.billing-page .mini-actions .aa-btn{ height:38px; line-height:38px; }
+
+/* 작은 month 입력 폭 */
+.billing-page .month-sm{
+    width: 9.75rem; min-width: 9.75rem;
+}
+
+/* 패널 공통 */
+.billing-page .panel-header{ padding-bottom:8px; border-bottom:1px solid var(--bp-border); margin-bottom:12px; }
+.billing-page .panel-title{ font-weight:600; color:var(--bp-text); }
+.billing-page .aa-ellipsis{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }

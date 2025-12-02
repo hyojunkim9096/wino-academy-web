@@ -6,8 +6,8 @@ import router from '@/router.jsx';
 import '@/index.css';
 
 // ✅ 1. 
-import { AuthProvider } from '@/contexts/AuthContext';
-import { CommonCodeProvider } from '@/contexts/CommonCodeContext';
+import { AuthProvider } from '@/common/components/contexts/AuthContext';
+import { CommonCodeProvider } from '@/common/components/contexts/CommonCodeContext';
 
 createRoot(document.getElementById('root')).render(
     <React.StrictMode>

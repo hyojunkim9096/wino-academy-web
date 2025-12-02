@@ -17,11 +17,11 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import AuthLayout from '@/components/layouts/AuthLayout';
-import AddressSearch from '@/components/AddressSearch';
-import { registerAdmin } from '@/api/adminApi';
-import { alertError, alertSuccess } from '@/ui/alert';
-import '@/styles/admin-signup.css';
+import AuthLayout from '@/common/components/layouts/AuthLayout';
+import AddressSearch from '@/common/components/AddressSearch.jsx';
+import { registerAdmin } from '@/features/admin/api/adminApi.js';
+import { alertError, alertSuccess } from '@/common/ui/alert.js';
+import '@/features/admin/styles/admin-signup.css';
 
 function AdminSignUpPage() {
     const navigate = useNavigate();
