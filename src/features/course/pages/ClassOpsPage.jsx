@@ -24,8 +24,8 @@ import { alertSuccess, alertError, alertInfo, confirmDialog } from '@/common/ui/
 // API
 import { listSemesters as listSemestersApi } from '@/features/semester/api/academySemesterApi.js';
 import {
-    previewClassOps,
-    snapshotAndCloseClasses,
+    previewCourseOps,
+    snapshotAndCloseCourses,
     restoreClassesFromSemester,
 } from '@/features/course/api/academyCourseApi.js';
 
@@ -95,7 +95,7 @@ export default function ClassOpsPage() {
         try {
             setLoadingPreview(true);
             // ✅ GET & params 로 호출 (academyClassApi.js에서 경로/메서드 일치)
-            const data = await previewClassOps(work, stage, Number(semesterId));
+            const data = await previewCourseOps(work, stage, Number(semesterId));
             setPreview(data || {});
         } catch (e) {
             console.error('[ClassOpsPage] preview fail:', e);
@@ -127,7 +127,7 @@ export default function ClassOpsPage() {
 
         try {
             setRunningClose(true);
-            await snapshotAndCloseClasses({
+            await snapshotAndCloseCourses({
                 workLocationCode: work,
                 schoolStage: stage,
                 semesterId: Number(semesterId),

@@ -1,49 +1,47 @@
 // src/features/system/pages/CommonCodePage.jsx
+// =============================================================================
+// 공통코드 관리 페이지
 // -----------------------------------------------------------------------------
-// 공통코드 관리
-// - 왼쪽: 그룹(1뎁스) 목록 (+ 등록/수정/삭제)
-// - 오른쪽: 선택 그룹의 코드 목록(표) (+ 등록/수정/삭제)
-// - IME(한글) 안전: 입력은 로컬 상태만 변경 (폼 리마운트 방지)
-// - 🔆 UI 보강: 그룹/권한 영역에 .cc-box 프레임(테두리) 추가
-// - 🔆 confirm: window.confirm → SweetAlert2 confirmDialog 로 교체
-// -----------------------------------------------------------------------------
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { alertError, alertSuccess, alertInfo, confirmDialog } from '@/common/ui/alert.js'; // ★ confirmDialog 추가
+// - 왼쪽: 그룹 목록 (선택/추가/수정/삭제)
+// - 오른쪽: 선택된 그룹의 상세 코드 목록 (Meta JSON 컬럼 포함)
+// - ✅ Fix: 저장 시 알림창이 모달 뒤에 가려지는 문제 해결 (모달 선닫기)
+// =============================================================================
+
+import React, { useEffect, useMemo, useState } from 'react';
+import { alertError, alertSuccess, alertInfo, confirmDialog } from '@/common/ui/alert.js';
 import {
     listGroups, createGroup, updateGroup, deleteGroup,
     getCodes, createCode, updateCode, deleteCode,
 } from '@/features/system/api/commonCodeAdminApi.js';
+
+// 스타일 임포트
 import '@/features/system/styles/admin.css';
+import '@/features/system/styles/admin-system.css';
 import '@/features/system/styles/admin-codes.css';
-import '@/features/system/styles/admin-system.css'; // 베이스/토큰(다크) - 항상 마지막
 
 const safeInfo = (t, m) => Promise.resolve(alertInfo(t, m)).catch(() => {});
 const safeSuccess = (t, m) => Promise.resolve(alertSuccess(t, m)).catch(() => {});
 const safeError = (t, m) => Promise.resolve(alertError(t, m)).catch(() => {});
 
-export default function CommonCodeManagePage() {
+export default function CommonCodePage() {
     /* ── 상태 ─────────────────────────────────────────────── */
-    // 왼쪽 그룹
     const [groups, setGroups] = useState([]);
     const [selectedGroup, setSelectedGroup] = useState(null);
 
-    // 오른쪽 코드 목록
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
 
-    // 에디터(오버레이) — groupEditor / codeEditor
-    // groupEditor = { mode:'create'|'edit', originalGroupCode?:string, draft:{groupCode,name,description,sortOrder,enabled} }
+    // 에디터(오버레이)
     const [groupEditor, setGroupEditor] = useState(null);
-    // codeEditor = { mode:'create'|'edit', originalCode?:string, draft:{code,name,sortOrder,enabled,metaJson} }
     const [codeEditor, setCodeEditor] = useState(null);
 
-    /* ── 초기 부팅: 그룹 목록 로딩 ─────────────────────────── */
+    /* ── 초기 부팅 ────────────────────────────────────────── */
     useEffect(() => {
         (async () => {
             try {
                 const list = await listGroups();
                 setGroups(list || []);
-                // 선택 유지 or 첫 번째 자동 선택
                 setSelectedGroup((prev) => {
                     if (prev && list?.some(g => g.groupCode === prev.groupCode)) return prev;
                     return list?.[0] || null;
@@ -54,14 +52,13 @@ export default function CommonCodeManagePage() {
         })();
     }, []);
 
-    /* ── 그룹 선택 변경 → 코드 목록 로딩 ──────────────────── */
+    /* ── 그룹 선택 시 코드 로딩 ───────────────────────────── */
     useEffect(() => {
         (async () => {
             if (!selectedGroup) { setItems([]); return; }
             setLoading(true);
             try {
                 const list = await getCodes(selectedGroup.groupCode);
-                // list: [{code,name,sortOrder,enabled,metaJson}, ...] 라고 가정
                 setItems(Array.isArray(list) ? list : []);
             } catch (e) {
                 safeError('오류', e?.response?.data?.message || e?.message || '코드 조회 실패');
@@ -73,9 +70,11 @@ export default function CommonCodeManagePage() {
 
     /* ── 헤더 ──────────────────────────────────────────────── */
     const Header = useMemo(() => (
-        <div className="mb-5 aa-container-xxl">
+        <div className="mb-4 aa-container-xxl">
             <h1 className="text-xl font-semibold text-white">공통코드 관리</h1>
-            <p className="text-sm text-slate-400">왼쪽에서 그룹을 고르고, 오른쪽에서 코드들을 관리합니다.</p>
+            <p className="text-sm text-slate-400">
+                시스템 기준 정보 및 옵션을 관리합니다.
+            </p>
         </div>
     ), []);
 
@@ -83,15 +82,16 @@ export default function CommonCodeManagePage() {
     const openCreateGroup = () => {
         setGroupEditor({
             mode: 'create',
-            draft: { groupCode: '', name: '', description: '', sortOrder: groups.length || 0, enabled: true }
+            draft: { groupCode: '', name: '', description: '', sortOrder: groups.length * 10, enabled: true }
         });
     };
+
     const openEditGroup = (g) => {
         setGroupEditor({
             mode: 'edit',
             originalGroupCode: g.groupCode,
             draft: {
-                groupCode: g.groupCode,     // 편집에서는 groupCode 바꾸지 않는 것을 권장(잠금)
+                groupCode: g.groupCode,
                 name: g.name || '',
                 description: g.description || '',
                 sortOrder: Number.isFinite(g.sortOrder) ? g.sortOrder : 0,
@@ -99,22 +99,25 @@ export default function CommonCodeManagePage() {
             }
         });
     };
+
     const saveGroup = async () => {
-        if (!groupEditor) return;
+        if (!groupEditor || isSaving) return;
         const { mode, originalGroupCode, draft } = groupEditor;
+
         if (!draft.groupCode?.trim() || !draft.name?.trim()) {
-            return safeInfo('안내', 'groupCode, name은 필수입니다.');
+            return safeInfo('안내', '코드와 이름은 필수입니다.');
         }
+
         try {
+            setIsSaving(true);
             if (mode === 'create') {
                 await createGroup({
-                    groupCode: draft.groupCode.trim(),
+                    groupCode: draft.groupCode.trim().toUpperCase(),
                     name: draft.name.trim(),
                     description: draft.description || null,
                     sortOrder: Number(draft.sortOrder || 0),
                     enabled: !!draft.enabled
                 });
-                await safeSuccess('성공', '그룹이 등록되었습니다.');
             } else {
                 await updateGroup(originalGroupCode, {
                     name: draft.name.trim(),
@@ -122,51 +125,58 @@ export default function CommonCodeManagePage() {
                     sortOrder: Number(draft.sortOrder || 0),
                     enabled: !!draft.enabled
                 });
-                await safeSuccess('성공', '그룹이 수정되었습니다.');
             }
 
+            // ✅ 순서 변경: 모달 먼저 닫기 -> 알림 -> 데이터 갱신
             setGroupEditor(null);
-            // 그룹 목록 리로드
+
+            await safeSuccess('성공', mode === 'create' ? '그룹이 등록되었습니다.' : '그룹이 수정되었습니다.');
+
             const list = await listGroups();
             setGroups(list || []);
-            // 선택 유지 or 신규 선택
+
+            // 선택 상태 복구
             const nextSel = list?.find(g => g.groupCode === (draft.groupCode || originalGroupCode)) || list?.[0] || null;
             setSelectedGroup(nextSel);
+
         } catch (e) {
-            safeError('오류', e?.response?.data?.message || e?.message || '그룹 저장 실패');
+            safeError('오류', e?.response?.data?.message || '그룹 저장 실패');
+        } finally {
+            setIsSaving(false);
         }
     };
+
     const removeGroup = async (g) => {
-        // 🔆 SweetAlert2 confirm 모달
         const ok = await confirmDialog(
             '그룹 삭제 확인',
-            `그룹 '${g.name}'를 삭제할까요?\n소속 코드가 있으면 함께 삭제됩니다.`,
+            `그룹 '${g.name}' (${g.groupCode})을 삭제하시겠습니까?\n⚠️ 포함된 상세 코드도 모두 삭제됩니다.`,
             { confirmText: '삭제', cancelText: '취소', confirmColor: '#ef4444' }
         );
         if (!ok) return;
 
         try {
             await deleteGroup(g.groupCode);
-            await safeSuccess('성공', '그룹이 삭제되었습니다.');
+            await safeSuccess('성공', '삭제되었습니다.');
             const list = await listGroups();
             setGroups(list || []);
-            // 삭제된 그룹이 선택되어 있었으면 옆으로 이동
             if (selectedGroup?.groupCode === g.groupCode) {
                 setSelectedGroup(list?.[0] || null);
             }
         } catch (e) {
-            safeError('오류', e?.response?.data?.message || e?.message || '그룹 삭제 실패');
+            safeError('오류', '삭제 중 오류가 발생했습니다.');
         }
     };
+
 
     /* ===== 코드 핸들러 ===== */
     const openCreateCode = () => {
         if (!selectedGroup) return;
         setCodeEditor({
             mode: 'create',
-            draft: { code: '', name: '', sortOrder: items.length || 0, enabled: true, metaJson: '' }
+            draft: { code: '', name: '', sortOrder: items.length * 10, enabled: true, metaJson: '' }
         });
     };
+
     const openEditCode = (row) => {
         if (!selectedGroup) return;
         setCodeEditor({
@@ -181,305 +191,331 @@ export default function CommonCodeManagePage() {
             }
         });
     };
+
     const saveCode = async () => {
-        if (!codeEditor || !selectedGroup) return;
+        if (!codeEditor || !selectedGroup || isSaving) return;
         const { mode, originalCode, draft } = codeEditor;
+
         if (!draft.code?.trim() || !draft.name?.trim()) {
-            return safeInfo('안내', 'code, name은 필수입니다.');
+            return safeInfo('안내', '코드와 이름은 필수입니다.');
         }
+
+        let finalMeta = null;
+        if (draft.metaJson && draft.metaJson.trim()) {
+            try {
+                JSON.parse(draft.metaJson);
+                finalMeta = draft.metaJson.trim();
+            } catch (e) {
+                return safeError('형식 오류', 'Meta JSON이 올바른 JSON 형식이 아닙니다.');
+            }
+        }
+
         try {
+            setIsSaving(true);
+            const payload = {
+                code: draft.code.trim(),
+                name: draft.name.trim(),
+                sortOrder: Number(draft.sortOrder || 0),
+                enabled: !!draft.enabled,
+                metaJson: finalMeta
+            };
+
             if (mode === 'create') {
-                await createCode(selectedGroup.groupCode, {
-                    code: draft.code.trim(),
-                    name: draft.name.trim(),
-                    sortOrder: Number(draft.sortOrder || 0),
-                    enabled: !!draft.enabled,
-                    metaJson: draft.metaJson || null
-                });
-                await safeSuccess('성공', '코드가 등록되었습니다.');
+                await createCode(selectedGroup.groupCode, payload);
             } else {
-                await updateCode(selectedGroup.groupCode, originalCode, {
-                    // code 자체도 바꿀 수 있게 반영
-                    code: draft.code.trim(),
-                    name: draft.name.trim(),
-                    sortOrder: Number(draft.sortOrder || 0),
-                    enabled: !!draft.enabled,
-                    metaJson: draft.metaJson || null
-                });
-                await safeSuccess('성공', '코드가 수정되었습니다.');
+                await updateCode(selectedGroup.groupCode, originalCode, payload);
             }
 
+            // ✅ 순서 변경: 모달 먼저 닫기 -> 알림 -> 데이터 갱신
             setCodeEditor(null);
+
+            await safeSuccess('성공', mode === 'create' ? '코드가 등록되었습니다.' : '코드가 수정되었습니다.');
+
             const list = await getCodes(selectedGroup.groupCode);
             setItems(Array.isArray(list) ? list : []);
+
         } catch (e) {
-            safeError('오류', e?.response?.data?.message || e?.message || '코드 저장 실패');
+            safeError('오류', e?.response?.data?.message || '코드 저장 실패');
+        } finally {
+            setIsSaving(false);
         }
     };
+
     const removeCode = async (row) => {
         if (!selectedGroup) return;
-        // 🔆 SweetAlert2 confirm 모달
         const ok = await confirmDialog(
             '코드 삭제 확인',
-            `'${row.name}' 코드를 삭제할까요?`,
+            `'${row.name}' (${row.code}) 코드를 삭제하시겠습니까?`,
             { confirmText: '삭제', cancelText: '취소', confirmColor: '#ef4444' }
         );
         if (!ok) return;
 
         try {
             await deleteCode(selectedGroup.groupCode, row.code);
-            await safeSuccess('성공', '코드가 삭제되었습니다.');
+            await safeSuccess('성공', '삭제되었습니다.');
             const list = await getCodes(selectedGroup.groupCode);
             setItems(Array.isArray(list) ? list : []);
         } catch (e) {
-            safeError('오류', e?.response?.data?.message || e?.message || '코드 삭제 실패');
+            safeError('오류', '삭제 실패');
         }
     };
 
-    /* ── 렌더 ──────────────────────────────────────────────── */
+
+    /* ── 렌더링 ──────────────────────────────────────────────── */
     return (
-        <section className="aa-page-dark p-6">
+        <section className="aa-page p-4 md:p-6">
             {Header}
+
             <div className="aa-container-xxl">
-                <div className="aa-panel-dark p-5 shadow-sm">
-                    {/* 3:7 레이아웃 */}
-                    <div className="aa-split aa-split-3-7">
-                        {/* ── 왼쪽: 그룹 ───────────────────────────── */}
-                        <div className="aa-left-3">
-                            <div className="aa-sticky-lg aa-panel-scroll">
-                                <div className="aa-panel-dark p-3">
-                                    {/* 🔆 그룹 박스(프레임) */}
-                                    <div className="cc-box">
-                                        <div className="cc-box-head">
-                                            <div className="font-semibold text-slate-100">그룹</div>
-                                            <div className="flex gap-2">
-                                                <button className="aa-btn aa-btn-primary" onClick={openCreateGroup}>그룹 등록</button>
-                                                {selectedGroup && (
-                                                    <>
-                                                        <button className="aa-btn" onClick={() => openEditGroup(selectedGroup)}>그룹 수정</button>
-                                                        <button className="aa-btn aa-btn-danger" onClick={() => removeGroup(selectedGroup)}>그룹 삭제</button>
-                                                    </>
+                <div className="aa-split aa-split-3-7">
+
+                    {/* [왼쪽] 그룹 목록 */}
+                    <div className="cc-box">
+                        <div className="cc-box-head">
+                            <span className="font-bold text-lg text-slate-100">코드 그룹</span>
+                            <button className="aa-btn aa-btn-sm aa-btn-primary" onClick={openCreateGroup}>
+                                + 그룹 추가
+                            </button>
+                        </div>
+                        <div className="cc-box-body">
+                            <div className="cc-list">
+                                {groups.length === 0 ? (
+                                    <div className="cc-empty">등록된 그룹이 없습니다.</div>
+                                ) : groups.map((g) => (
+                                    <button
+                                        key={g.groupCode}
+                                        className={`cc-item ${selectedGroup?.groupCode === g.groupCode ? 'is-active' : ''}`}
+                                        onClick={() => { setSelectedGroup(g); setCodeEditor(null); }}
+                                    >
+                                        <span className="cc-badge">{g.sortOrder}</span>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="cc-name">{g.name}</div>
+                                            <div className="cc-code">{g.groupCode}</div>
+                                        </div>
+                                        {selectedGroup?.groupCode === g.groupCode && (
+                                            <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+                                                <button className="aa-btn aa-btn-xs" onClick={() => openEditGroup(g)}>✏️</button>
+                                                <button className="aa-btn aa-btn-xs aa-btn-danger" onClick={() => removeGroup(g)}>🗑️</button>
+                                            </div>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* [오른쪽] 상세 코드 목록 */}
+                    <div className="cc-box">
+                        <div className="cc-box-head">
+                            <div className="flex flex-col">
+                                <span className="font-bold text-lg text-slate-100">
+                                    {selectedGroup ? selectedGroup.name : '선택된 그룹 없음'}
+                                </span>
+                                {selectedGroup && <span className="text-xs text-slate-400 font-mono">{selectedGroup.groupCode}</span>}
+                            </div>
+                            <button
+                                className="aa-btn aa-btn-sm aa-btn-primary"
+                                onClick={openCreateCode}
+                                disabled={!selectedGroup}
+                            >
+                                + 코드 추가
+                            </button>
+                        </div>
+
+                        <div className="cc-box-body">
+                            {loading && <div className="text-center py-4 text-slate-400">데이터 로딩 중...</div>}
+
+                            {!loading && items.length === 0 && (
+                                <div className="cc-empty">
+                                    {selectedGroup ? '등록된 코드가 없습니다.' : '왼쪽에서 그룹을 선택해주세요.'}
+                                </div>
+                            )}
+
+                            {!loading && items.length > 0 && (
+                                <table className="cc-table">
+                                    <thead>
+                                    <tr>
+                                        <th style={{ width: '60px' }}>정렬</th>
+                                        <th style={{ width: '120px' }}>코드</th>
+                                        <th style={{ width: '150px' }}>이름</th>
+                                        {/* Meta JSON 컬럼 */}
+                                        <th>Meta (JSON)</th>
+                                        <th style={{ width: '80px', textAlign: 'center' }}>사용</th>
+                                        <th style={{ width: '120px', textAlign: 'right' }}>관리</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody>
+                                    {items.map((row) => (
+                                        <tr key={row.code}>
+                                            <td className="text-center text-slate-500">{row.sortOrder}</td>
+                                            <td className="font-mono text-indigo-300 font-bold">{row.code}</td>
+                                            <td className="font-semibold">{row.name}</td>
+
+                                            <td className="text-sm">
+                                                {row.metaJson ? (
+                                                    <code className="bg-slate-800 text-slate-300 px-2 py-1 rounded border border-slate-700 block truncate max-w-[240px]" title={row.metaJson}>
+                                                        {row.metaJson}
+                                                    </code>
+                                                ) : (
+                                                    <span className="text-slate-600">-</span>
                                                 )}
-                                            </div>
-                                        </div>
-                                        <div className="cc-box-body">
-                                            <div className="cc-list">
-                                                {groups.length === 0 ? (
-                                                    <div className="text-slate-400 text-sm">등록된 그룹이 없습니다.</div>
-                                                ) : groups.map((g) => (
-                                                    <button
-                                                        key={g.groupCode}
-                                                        className={`cc-item ${selectedGroup?.groupCode === g.groupCode ? 'is-active' : ''}`}
-                                                        onClick={() => { setSelectedGroup(g); setCodeEditor(null); }}
-                                                        title={g.description || g.groupCode}
-                                                    >
-                                                        <span className="cc-badge">{Number.isFinite(g.sortOrder) ? g.sortOrder : '-'}</span>
-                                                        <span className="cc-name">{g.name}</span>
-                                                        <span className="cc-code">{g.groupCode}</span>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                                            </td>
+
+                                            <td className="text-center">
+                                                {row.enabled
+                                                    ? <span className="text-green-400 text-xs font-bold">사용</span>
+                                                    : <span className="text-slate-600 text-xs">미사용</span>}
+                                            </td>
+                                            <td className="text-right">
+                                                <div className="flex justify-end gap-2">
+                                                    <button className="aa-btn aa-btn-xs" onClick={() => openEditCode(row)}>수정</button>
+                                                    <button className="aa-btn aa-btn-xs aa-btn-danger" onClick={() => removeCode(row)}>삭제</button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    </tbody>
+                                </table>
+                            )}
                         </div>
-
-                        {/* ── 오른쪽: 코드 목록(= 권한 쪽으로 이해) ───── */}
-                        <div className="aa-right-7">
-                            <div className="aa-sticky-lg aa-panel-scroll">
-                                <div className="aa-panel-dark p-4">
-                                    {/* 🔆 권한/코드 박스(프레임) */}
-                                    <div className="cc-box">
-                                        <div className="cc-box-head">
-                                            <div>
-                                                <div className="font-semibold">{selectedGroup?.name || '-'}</div>
-                                                <div className="text-xs text-slate-400">{selectedGroup?.groupCode || ''}</div>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <button className="aa-btn aa-btn-primary" onClick={openCreateCode} disabled={!selectedGroup}>코드 등록</button>
-                                            </div>
-                                        </div>
-
-                                        <div className="cc-box-body">
-                                            {loading ? (
-                                                <div className="text-slate-400">로딩 중…</div>
-                                            ) : (
-                                                <table className="cc-table">
-                                                    <thead>
-                                                    <tr>
-                                                        <th style={{width:'160px'}}>code</th>
-                                                        <th>name</th>
-                                                        <th style={{width:'80px'}}>정렬</th>
-                                                        <th style={{width:'120px'}}>사용</th>
-                                                        <th style={{width:'140px'}}>액션</th>
-                                                    </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                    {items.length === 0 ? (
-                                                        <tr><td colSpan={5} className="cc-empty">등록된 코드가 없습니다.</td></tr>
-                                                    ) : items
-                                                        .slice()
-                                                        .sort((a,b) => (a.sortOrder??0) - (b.sortOrder??0) || a.code.localeCompare(b.code))
-                                                        .map((row) => (
-                                                            <tr key={row.code}>
-                                                                <td><span className="font-mono">{row.code}</span></td>
-                                                                <td>{row.name}</td>
-                                                                <td>{Number.isFinite(row.sortOrder) ? row.sortOrder : '-'}</td>
-                                                                <td>{row.enabled ? 'true' : 'false'}</td>
-                                                                <td>
-                                                                    <div className="flex gap-2">
-                                                                        <button className="aa-btn" onClick={() => openEditCode(row)}>수정</button>
-                                                                        <button className="aa-btn aa-btn-danger" onClick={() => removeCode(row)}>삭제</button>
-                                                                    </div>
-                                                                </td>
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* 그룹 에디터(오버레이) */}
-                                    {groupEditor && (
-                                        <div className="cc-editor">
-                                            <div className="cc-editor-card">
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <div className="font-semibold">
-                                                        {groupEditor.mode === 'create' ? '그룹 등록' : '그룹 수정'}
-                                                    </div>
-                                                    <button className="aa-btn" onClick={() => setGroupEditor(null)}>닫기</button>
-                                                </div>
-                                                <div className="grid grid-cols-2 gap-3">
-                                                    <div className="col-span-1">
-                                                        <label className="cc-label">groupCode</label>
-                                                        <input
-                                                            className="cc-input"
-                                                            value={groupEditor.draft.groupCode}
-                                                            onChange={(e) => setGroupEditor(prev => ({...prev, draft:{...prev.draft, groupCode:e.target.value}}))}
-                                                            disabled={groupEditor.mode === 'edit'}
-                                                            placeholder="BOARD_TYPE"
-                                                        />
-                                                    </div>
-                                                    <div className="col-span-1">
-                                                        <label className="cc-label">name</label>
-                                                        <input
-                                                            className="cc-input"
-                                                            value={groupEditor.draft.name}
-                                                            onChange={(e) => setGroupEditor(prev => ({...prev, draft:{...prev.draft, name:e.target.value}}))}
-                                                            placeholder="게시판 타입"
-                                                        />
-                                                    </div>
-                                                    <div className="col-span-2">
-                                                        <label className="cc-label">description</label>
-                                                        <input
-                                                            className="cc-input"
-                                                            value={groupEditor.draft.description || ''}
-                                                            onChange={(e) => setGroupEditor(prev => ({...prev, draft:{...prev.draft, description:e.target.value}}))}
-                                                            placeholder="설명(선택)"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="cc-label">정렬</label>
-                                                        <input
-                                                            type="number"
-                                                            className="cc-input"
-                                                            value={groupEditor.draft.sortOrder ?? 0}
-                                                            onChange={(e) => setGroupEditor(prev => ({...prev, draft:{...prev.draft, sortOrder:Number(e.target.value)}}))}
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="cc-label">사용</label>
-                                                        <input
-                                                            type="checkbox"
-                                                            className="w-4 h-4 align-middle ml-2"
-                                                            checked={!!groupEditor.draft.enabled}
-                                                            onChange={(e) => setGroupEditor(prev => ({...prev, draft:{...prev.draft, enabled:e.target.checked}}))}
-                                                        />
-                                                    </div>
-                                                </div>
-                                                <div className="mt-4 flex justify-end gap-2">
-                                                    <button className="aa-btn" onClick={() => setGroupEditor(null)}>취소</button>
-                                                    <button className="aa-btn aa-btn-primary" onClick={saveGroup}>저장</button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* 코드 에디터(오버레이) */}
-                                    {codeEditor && (
-                                        <div className="cc-editor">
-                                            <div className="cc-editor-card">
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <div className="font-semibold">
-                                                        {codeEditor.mode === 'create' ? '코드 등록' : '코드 수정'}
-                                                    </div>
-                                                    <button className="aa-btn" onClick={() => setCodeEditor(null)}>닫기</button>
-                                                </div>
-                                                <div className="grid grid-cols-2 gap-3">
-                                                    <div className="col-span-1">
-                                                        <label className="cc-label">code</label>
-                                                        <input
-                                                            className="cc-input"
-                                                            value={codeEditor.draft.code}
-                                                            onChange={(e) => setCodeEditor(prev => ({...prev, draft:{...prev.draft, code:e.target.value}}))}
-                                                            placeholder="TABLE or GALLERY"
-                                                        />
-                                                    </div>
-                                                    <div className="col-span-1">
-                                                        <label className="cc-label">name</label>
-                                                        <input
-                                                            className="cc-input"
-                                                            value={codeEditor.draft.name}
-                                                            onChange={(e) => setCodeEditor(prev => ({...prev, draft:{...prev.draft, name:e.target.value}}))}
-                                                            placeholder="테이블형 / 갤러리형"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="cc-label">정렬</label>
-                                                        <input
-                                                            type="number"
-                                                            className="cc-input"
-                                                            value={codeEditor.draft.sortOrder ?? 0}
-                                                            onChange={(e) => setCodeEditor(prev => ({...prev, draft:{...prev.draft, sortOrder:Number(e.target.value)}}))}
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="cc-label">사용</label>
-                                                        <input
-                                                            type="checkbox"
-                                                            className="w-4 h-4 align-middle ml-2"
-                                                            checked={!!codeEditor.draft.enabled}
-                                                            onChange={(e) => setCodeEditor(prev => ({...prev, draft:{...prev.draft, enabled:e.target.checked}}))}
-                                                        />
-                                                    </div>
-                                                    <div className="col-span-2">
-                                                        <label className="cc-label">metaJson</label>
-                                                        <textarea
-                                                            className="cc-input"
-                                                            rows={3}
-                                                            value={codeEditor.draft.metaJson || ''}
-                                                            onChange={(e) => setCodeEditor(prev => ({...prev, draft:{...prev.draft, metaJson:e.target.value}}))}
-                                                            placeholder='{"thumb":"on","cols":3}'
-                                                        />
-                                                    </div>
-                                                </div>
-                                                <div className="mt-4 flex justify-end gap-2">
-                                                    <button className="aa-btn" onClick={() => setCodeEditor(null)}>취소</button>
-                                                    <button className="aa-btn aa-btn-primary" onClick={saveCode}>저장</button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                </div>
-                            </div>
-                        </div>
-
                     </div>
                 </div>
             </div>
+
+            {/* 그룹 에디터 (Modal) */}
+            {groupEditor && (
+                <div className="cc-editor">
+                    <div className="cc-editor-card">
+                        <div className="cc-editor-head">
+                            <h3 className="cc-editor-title">
+                                {groupEditor.mode === 'create' ? '새 그룹 등록' : '그룹 정보 수정'}
+                            </h3>
+                            <button className="aa-btn aa-btn-ghost" onClick={() => setGroupEditor(null)}>✕</button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="cc-label">그룹 코드 <span className="text-red-400">*</span></label>
+                                <input
+                                    className="cc-input"
+                                    value={groupEditor.draft.groupCode}
+                                    onChange={(e) => setGroupEditor(prev => ({...prev, draft:{...prev.draft, groupCode:e.target.value.toUpperCase()}}))}
+                                    disabled={groupEditor.mode === 'edit'}
+                                    placeholder="GROUP_CODE"
+                                />
+                            </div>
+                            <div>
+                                <label className="cc-label">그룹 명칭 <span className="text-red-400">*</span></label>
+                                <input
+                                    className="cc-input"
+                                    value={groupEditor.draft.name}
+                                    onChange={(e) => setGroupEditor(prev => ({...prev, draft:{...prev.draft, name:e.target.value}}))}
+                                />
+                            </div>
+                            <div className="col-span-2">
+                                <label className="cc-label">설명</label>
+                                <input
+                                    className="cc-input"
+                                    value={groupEditor.draft.description || ''}
+                                    onChange={(e) => setGroupEditor(prev => ({...prev, draft:{...prev.draft, description:e.target.value}}))}
+                                />
+                            </div>
+                            <div>
+                                <label className="cc-label">정렬 순서</label>
+                                <input
+                                    type="number"
+                                    className="cc-input"
+                                    value={groupEditor.draft.sortOrder}
+                                    onChange={(e) => setGroupEditor(prev => ({...prev, draft:{...prev.draft, sortOrder: Number(e.target.value)}}))}
+                                />
+                            </div>
+                            <div className="flex items-center pt-6">
+                                <label className="flex items-center cursor-pointer gap-2">
+                                    <input
+                                        type="checkbox"
+                                        className="w-5 h-5 accent-indigo-500"
+                                        checked={groupEditor.draft.enabled}
+                                        onChange={(e) => setGroupEditor(prev => ({...prev, draft:{...prev.draft, enabled:e.target.checked}}))}
+                                    />
+                                    <span className="text-slate-200">사용 여부</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div className="cc-btn-row">
+                            <button className="aa-btn" onClick={() => setGroupEditor(null)} disabled={isSaving}>취소</button>
+                            <button className="aa-btn aa-btn-primary" onClick={saveGroup} disabled={isSaving}>저장</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 코드 에디터 (Modal) */}
+            {codeEditor && (
+                <div className="cc-editor">
+                    <div className="cc-editor-card">
+                        <div className="cc-editor-head">
+                            <h3 className="cc-editor-title">
+                                {codeEditor.mode === 'create' ? '새 코드 등록' : '코드 정보 수정'}
+                            </h3>
+                            <button className="aa-btn aa-btn-ghost" onClick={() => setCodeEditor(null)}>✕</button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="cc-label">코드 <span className="text-red-400">*</span></label>
+                                <input
+                                    className="cc-input"
+                                    value={codeEditor.draft.code}
+                                    onChange={(e) => setCodeEditor(prev => ({...prev, draft:{...prev.draft, code:e.target.value}}))}
+                                    placeholder="CODE_VAL"
+                                />
+                            </div>
+                            <div>
+                                <label className="cc-label">명칭 <span className="text-red-400">*</span></label>
+                                <input
+                                    className="cc-input"
+                                    value={codeEditor.draft.name}
+                                    onChange={(e) => setCodeEditor(prev => ({...prev, draft:{...prev.draft, name:e.target.value}}))}
+                                />
+                            </div>
+                            <div>
+                                <label className="cc-label">정렬 순서</label>
+                                <input
+                                    type="number"
+                                    className="cc-input"
+                                    value={codeEditor.draft.sortOrder}
+                                    onChange={(e) => setCodeEditor(prev => ({...prev, draft:{...prev.draft, sortOrder: Number(e.target.value)}}))}
+                                />
+                            </div>
+                            <div className="flex items-center pt-6">
+                                <label className="flex items-center cursor-pointer gap-2">
+                                    <input
+                                        type="checkbox"
+                                        className="w-5 h-5 accent-indigo-500"
+                                        checked={codeEditor.draft.enabled}
+                                        onChange={(e) => setCodeEditor(prev => ({...prev, draft:{...prev.draft, enabled:e.target.checked}}))}
+                                    />
+                                    <span className="text-slate-200">사용 여부</span>
+                                </label>
+                            </div>
+                            <div className="col-span-2">
+                                <label className="cc-label flex justify-between">
+                                    <span>Meta Data (JSON)</span>
+                                    <span className="text-xs text-indigo-400">Ex: {"{\"stages\": [\"E\"]}"}</span>
+                                </label>
+                                <textarea
+                                    className="cc-textarea"
+                                    value={codeEditor.draft.metaJson}
+                                    onChange={(e) => setCodeEditor(prev => ({...prev, draft:{...prev.draft, metaJson:e.target.value}}))}
+                                    placeholder='JSON 형식으로 입력 (선택)'
+                                />
+                            </div>
+                        </div>
+                        <div className="cc-btn-row">
+                            <button className="aa-btn" onClick={() => setCodeEditor(null)} disabled={isSaving}>취소</button>
+                            <button className="aa-btn aa-btn-primary" onClick={saveCode} disabled={isSaving}>저장</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </section>
     );
 }
