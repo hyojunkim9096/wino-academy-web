@@ -1,23 +1,31 @@
 // src/common/components/ui/Modal.jsx
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 
 /**
  * 공통 모달
  * - 배경 클릭 / ESC 로 닫기
  * - size 프리셋으로 가로폭 제어 + contentClassName 으로 세밀 조정
  *
- * 사용법 예)
- *  <Modal title="학교 검색" onClose={...} size="2xl" contentClassName="max-h-[85vh]">
- *    ...컨텐츠...
+ * ✅ 개선(하위 호환 유지)
+ *  - scroll 옵션 추가:
+ *      scroll="panel"(기본): 패널 전체가 스크롤(기존과 동일)
+ *      scroll="body": 헤더는 고정, 본문만 스크롤 (리스트가 긴 모달에 추천)
+ *
+ * 사용 예)
+ *  <Modal title="보호자 검색" onClose={...} size="lg" scroll="body">
+ *    ...내용...
  *  </Modal>
  */
 export default function Modal({
                                   title,
                                   children,
                                   onClose,
-                                  className = '',          // 기존 호환을 위해 유지(패널에 추가로 붙는 클래스)
-                                  size = 'md',             // 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full' | 커스텀 클래스 문자열
-                                  contentClassName = '',   // 패널에 세밀한 커스텀 클래스 추가(높이/패딩 등)
+                                  className = '',
+                                  size = 'md',
+                                  contentClassName = '',
+
+                                  // ✅ 신규 옵션: 스크롤 방식 (기본은 기존과 동일)
+                                  scroll = 'panel', // 'panel' | 'body'
                               }) {
     // ESC 로 닫기
     useEffect(() => {
@@ -27,16 +35,28 @@ export default function Modal({
     }, [onClose]);
 
     // 사이즈 프리셋 → Tailwind max-w 클래스 매핑
-    // 필요 시 size 에 커스텀 클래스 문자열을 바로 넘겨도 동작함(아래에서 그대로 적용)
     const sizeClass =
         ({
-            sm: 'max-w-md',     // ~ 28rem
-            md: 'max-w-xl',     // ~ 36rem (기본 너비 조금 키움: 기존 max-w-md 보다 여유)
-            lg: 'max-w-2xl',    // ~ 42rem
-            xl: 'max-w-4xl',    // ~ 56rem
-            '2xl': 'max-w-6xl', // ~ 72rem
+            sm: 'max-w-md',
+            md: 'max-w-xl',
+            lg: 'max-w-2xl',
+            xl: 'max-w-4xl',
+            '2xl': 'max-w-6xl',
             full: 'max-w-[95vw]',
-        }[size]) || size;     // 프리셋 외 문자열을 직접 넘기면 그대로 사용
+        }[size]) || size;
+
+    // 스크롤 모드에 따라 패널/본문 클래스 분리
+    const panelOverflowClass = useMemo(() => {
+        // 기존 동작(패널 전체 스크롤)
+        if (scroll === 'panel') return 'max-h-[85vh] overflow-auto';
+        // 헤더 고정 + 본문만 스크롤
+        return 'max-h-[85vh] overflow-hidden';
+    }, [scroll]);
+
+    const bodyOverflowClass = useMemo(() => {
+        if (scroll === 'body') return 'overflow-auto max-h-[calc(85vh-56px)]';
+        return ''; // panel 스크롤일 때는 별도 바디 스크롤 필요 없음
+    }, [scroll]);
 
     return (
         <div
@@ -45,21 +65,30 @@ export default function Modal({
             aria-modal="true"
             aria-label={title || 'modal'}
         >
-            {/* 오버레이(배경) */}
+            {/* 오버레이 */}
             <div className="absolute inset-0 bg-black/60" onClick={onClose} />
 
-            {/* 패널: 사이즈/높이 스크롤/테두리/둥근모서리/그림자/패딩 적용 */}
+            {/* 패널 */}
             <div
-                className={`relative w-full ${sizeClass} mx-4 bg-slate-900 border border-slate-700 rounded-xl shadow-xl p-5 max-h-[85vh] overflow-auto ${className} ${contentClassName}`}
+                className={[
+                    'relative w-full',
+                    sizeClass,
+                    'mx-4 bg-slate-900 border border-slate-700 rounded-xl shadow-xl p-5',
+                    panelOverflowClass,
+                    className,
+                    contentClassName,
+                ].join(' ')}
             >
-                {/* 헤더(제목 + 닫기 버튼) */}
+                {/* 헤더 */}
                 <div className="flex items-center justify-between mb-3">
                     {title ? <div className="text-white font-semibold">{title}</div> : <div />}
                     <button className="aa-btn" onClick={onClose} title="닫기" aria-label="닫기">닫기</button>
                 </div>
 
-                {/* 컨텐츠 */}
-                {children}
+                {/* 본문 (scroll="body"일 때만 스크롤) */}
+                <div className={bodyOverflowClass}>
+                    {children}
+                </div>
             </div>
         </div>
     );
